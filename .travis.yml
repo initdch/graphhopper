@@ -6,4 +6,4 @@ jdk:
 # before_script: cd core
 notifications:
   email:
-    - peathal@yahoo.de
+    - tbuerli@student.ethz.ch
