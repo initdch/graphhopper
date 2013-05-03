@@ -1,4 +1,4 @@
-# GraphHopper [![Build Status](https://secure.travis-ci.org/graphhopper/graphhopper.png?branch=master)](http://travis-ci.org/graphhopper/graphhopper)
+# GraphHopper [![Build Status](https://secure.travis-ci.org/initdch/graphhopper.png?branch=master)](http://travis-ci.org/initdch/graphhopper)
 
 A fast and memory efficient Java road routing engine under Apache License 2.0
 
