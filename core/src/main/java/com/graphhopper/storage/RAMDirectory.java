@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license 
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license 
  *  agreements. See the NOTICE file distributed with this work for 
  *  additional information regarding copyright ownership.
  * 
- *  Peter Karich licenses this file to you under the Apache License, 
+ *  GraphHopper licenses this file to you under the Apache License, 
  *  Version 2.0 (the "License"); you may not use this file except 
  *  in compliance with the License. You may obtain a copy of the 
  *  License at
@@ -37,8 +37,8 @@ public class RAMDirectory extends AbstractDirectory {
     }
 
     /**
-     * @param store true if you want that the RAMDirectory can be loaded or saved on demand, false
-     * if it should be entirely in RAM
+     * @param store true if you want that the RAMDirectory can be loaded or
+     * saved on demand, false if it should be entirely in RAM
      */
     public RAMDirectory(String _location, boolean store) {
         super(_location);
@@ -59,5 +59,10 @@ public class RAMDirectory extends AbstractDirectory {
     @Override
     protected DataAccess create(String id, String location) {
         return new RAMDataAccess(id, location, store);
+    }
+
+    @Override
+    public boolean isLoadRequired() {
+        return store;
     }
 }

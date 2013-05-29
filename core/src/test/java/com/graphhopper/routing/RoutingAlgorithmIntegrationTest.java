@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license 
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license 
  *  agreements. See the NOTICE file distributed with this work for 
  *  additional information regarding copyright ownership.
  * 
- *  Peter Karich licenses this file to you under the Apache License, 
+ *  GraphHopper licenses this file to you under the Apache License, 
  *  Version 2.0 (the "License"); you may not use this file except 
  *  in compliance with the License. You may obtain a copy of the 
  *  License at
@@ -19,7 +19,9 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.GraphHopper;
+import com.graphhopper.routing.util.AcceptWay;
 import com.graphhopper.routing.util.AlgorithmPreparation;
+import com.graphhopper.routing.util.BikeFlagEncoder;
 import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.EdgeFilter;
@@ -29,7 +31,6 @@ import com.graphhopper.routing.util.EdgePropertyEncoder;
 import com.graphhopper.routing.util.FootFlagEncoder;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.index.Location2IDIndex;
-import com.graphhopper.util.CmdArgs;
 import com.graphhopper.util.Helper;
 import java.io.File;
 import java.io.IOException;
@@ -61,8 +62,8 @@ public class RoutingAlgorithmIntegrationTest {
         // list.add(new OneRun(43.727687, 7.418737, 43.730729, 7.421288, 1.532, 88));
         // but the other direction (where no crossing is necessary) is possible:
         list.add(new OneRun(43.730729, 7.42135, 43.72775, 7.418737, 2524, 87));
-        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3604, 136));
-        list.add(new OneRun(43.72915, 7.410572, 43.739213, 7.4277, 2365, 99));        
+        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3605, 126));
+        list.add(new OneRun(43.72915, 7.410572, 43.739213, 7.4277, 2490, 102));
         return list;
     }
 
@@ -79,8 +80,8 @@ public class RoutingAlgorithmIntegrationTest {
         // Distance is the same.
         List<OneRun> list = createMonacoCar();
         list.get(0).locs = 97;
-        list.get(1).locs = 147;
-                
+        list.get(1).locs = 135;
+
         // 43.72915, 7.410572, 43.739213, 7.4277 -> cannot route
         // 43.72915, 7.410572, 43.739213, 7.4278 -> all ok
         runAlgo(testCollector, "files/monaco.osm.gz", "target/graph-monaco",
@@ -100,6 +101,17 @@ public class RoutingAlgorithmIntegrationTest {
     }
 
     @Test
+    public void testMonacoBike() {
+        List<OneRun> list = new ArrayList<OneRun>();
+        list.add(new OneRun(43.730729, 7.421288, 43.727687, 7.418737, 2543, 86));
+        list.add(new OneRun(43.727687, 7.418737, 43.74958, 7.436566, 3604, 125));
+        list.add(new OneRun(43.72915, 7.410572, 43.739213, 7.427806, 2797, 124));
+        runAlgo(testCollector, "files/monaco.osm.gz", "target/graph-monaco",
+                list, "BIKE", true, new BikeFlagEncoder());
+        assertEquals(testCollector.toString(), 0, testCollector.errors.size());
+    }
+
+    @Test
     public void testAndorra() {
         List<OneRun> list = new ArrayList<OneRun>();
         list.add(new OneRun(42.56819, 1.603231, 42.571034, 1.520662, 21122, 699));
@@ -113,8 +125,8 @@ public class RoutingAlgorithmIntegrationTest {
     @Test
     public void testAndorraFoot() {
         List<OneRun> list = new ArrayList<OneRun>();
-        list.add(new OneRun(42.56819, 1.603231, 42.571034, 1.520662, 16053, 509));
-        list.add(new OneRun(42.529176, 1.571302, 42.571034, 1.520662, 12154, 367));
+        list.add(new OneRun(42.56819, 1.603231, 42.571034, 1.520662, 16189, 517));
+        list.add(new OneRun(42.529176, 1.571302, 42.571034, 1.520662, 12410, 391));
         // if we would use double for lat+lon we would get path length 16.466 instead of 16.452
         runAlgo(testCollector, "files/andorra.osm.gz", "target/graph-andorra",
                 list, "FOOT", true, new FootFlagEncoder());
@@ -143,12 +155,9 @@ public class RoutingAlgorithmIntegrationTest {
         try {
             // make sure we are using the latest file format
             Helper.removeDir(new File(graphFile));
-            GraphHopper hopper = new GraphHopper().
-                    init(new CmdArgs().
-                    put("graph.location", graphFile).
-                    put("graph.dataaccess", "inmemory").
-                    put("osmreader.osm", osmFile).
-                    put("osmreader.acceptWay", vehicles)).
+            GraphHopper hopper = new GraphHopper().setInMemory(true, true).
+                    osmFile(osmFile).graphHopperLocation(graphFile).
+                    acceptWay(new AcceptWay(vehicles)).
                     importOrLoad();
 
             Graph g = hopper.graph();
@@ -176,11 +185,8 @@ public class RoutingAlgorithmIntegrationTest {
         System.out.println("testMonacoParallel takes a bit time...");
         String graphFile = "target/graph-monaco";
         Helper.removeDir(new File(graphFile));
-        GraphHopper hopper = new GraphHopper().
-                init(new CmdArgs().
-                put("graph.location", graphFile).
-                put("graph.dataaccess", "inmemory").
-                put("osmreader.osm", "files/monaco.osm.gz")).
+        GraphHopper hopper = new GraphHopper().setInMemory(true, true).
+                osmFile("files/monaco.osm.gz").graphHopperLocation(graphFile).
                 importOrLoad();
         final Graph g = hopper.graph();
         final Location2IDIndex idx = hopper.index();

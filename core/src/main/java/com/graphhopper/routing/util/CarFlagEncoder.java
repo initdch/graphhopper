@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license
  *  agreements. See the NOTICE file distributed with this work for
  *  additional information regarding copyright ownership.
  *
- *  Peter Karich licenses this file to you under the Apache License,
+ *  GraphHopper licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the
  *  License at
@@ -18,8 +18,8 @@
  */
 package com.graphhopper.routing.util;
 
+import com.graphhopper.reader.OSMWay;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 
 /**
@@ -27,14 +27,16 @@ import java.util.Map;
  */
 public class CarFlagEncoder extends AbstractFlagEncoder {
 
-    private static HashSet<String> restricted = new HashSet<String>();
     private static final Map<String, Integer> SPEED = new CarSpeed();
 
     public CarFlagEncoder() {
         super(0, 2, SPEED.get("secondary"), SPEED.get("motorway"));
-        restricted.add("private");
-        restricted.add("agricultural");
-        restricted.add("forestry");
+        restrictions = new String[]{"motorcar", "motor_vehicle", "vehicle", "access"};
+        restrictedValues.add("private");
+        restrictedValues.add("agricultural");
+        restrictedValues.add("forestry");
+        restrictedValues.add("no");
+        restrictedValues.add("restricted");
     }
 
     public boolean isMotorway(int flags) {
@@ -45,23 +47,69 @@ public class CarFlagEncoder extends AbstractFlagEncoder {
         return getSpeedPart(flags) * factor == SPEED.get("service");
     }
 
-    public Integer getSpeed(String string) {
-        return SPEED.get(string);
+    public int getSpeed(String string) {
+        Integer speed = SPEED.get(string);
+        if (speed == null)
+            throw new IllegalStateException("car, no speed found for:" + string);
+        return speed;
     }
 
     @Override
-    public boolean isAllowed(Map<String, String> osmProperties) {
-        String highwayValue = osmProperties.get("highway");
-        if (!SPEED.containsKey(highwayValue))
-            return false;
+    public int isAllowed(OSMWay way) {
+        String highwayValue = way.getTag("highway");
+        if (highwayValue == null) {
+            if (way.hasTag("route", ferries)) {
+                String markedFor = way.getTag("motorcar");
+                if (markedFor == null)
+                    markedFor = way.getTag("motor_vehicle");
+                if ("yes".equals(markedFor))
+                    return acceptBit | ferryBit;
+            }
+            return 0;
+        } else {
+            if (!SPEED.containsKey(highwayValue))
+                return 0;
 
-        String motorcarValue = osmProperties.get("motorcar");
-        if ("no".equals(motorcarValue) || "none".equals(motorcarValue))
-            return false;
-        String accessValue = osmProperties.get("access");
-        if (!super.isAllowed(accessValue))
-            return false;
-        return !restricted.contains(accessValue);
+            // check access restrictions
+            if (way.hasTag(restrictions, restrictedValues))
+                return 0;
+
+            return acceptBit;
+        }
+    }
+
+    @Override
+    public int handleWayTags(int allowed, OSMWay way) {
+        if ((allowed & acceptBit) == 0)
+            return 0;
+
+        int encoded;
+        if ((allowed & ferryBit) == 0) {
+            String highwayValue = way.getTag("highway");
+            // get assumed speed from highway type
+            Integer speed = getSpeed(highwayValue);
+            // apply speed limit
+            int maxspeed = AcceptWay.parseSpeed(way.getTag("maxspeed"));
+            if (maxspeed > 0 && speed > maxspeed)
+                //outProperties.put( "car", maxspeed );
+                speed = maxspeed;
+
+            // usually used with a node, this does not work as intended
+            // if( "toll_booth".equals( osmProperties.get( "barrier" ) ) )
+            if (way.hasTag("oneway", oneways)) {
+                encoded = flags(speed, false);
+                if (way.hasTag("oneway", "-1")) {
+                    encoded = swapDirection(encoded);
+                }
+            } else
+                encoded = flags(speed, true);
+
+        } else {
+            // TODO read duration and calculate speed 00:30 for ferry
+            encoded = flags(10, true);
+        }
+
+        return encoded;
     }
 
     @Override public String toString() {

@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license
  *  agreements. See the NOTICE file distributed with this work for
  *  additional information regarding copyright ownership.
  *
- *  Peter Karich licenses this file to you under the Apache License,
+ *  GraphHopper licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the
  *  License at
@@ -18,6 +18,8 @@
  */
 package com.graphhopper.routing.util;
 
+import com.graphhopper.reader.OSMWay;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -27,7 +29,7 @@ import java.util.Set;
  * @author Peter Karich
  */
 public class FootFlagEncoder extends AbstractFlagEncoder {
-    
+
     private final Set<String> saveHighwayTags = new HashSet<String>() {
         {
             add("footway");
@@ -55,13 +57,35 @@ public class FootFlagEncoder extends AbstractFlagEncoder {
         }
     };
     private static final Map<String, Integer> SPEED = new FootSpeed();
+    protected HashSet<String> intended = new HashSet<String>();
+    protected HashSet<String> sidewalks = new HashSet<String>();
 
     public FootFlagEncoder() {
         super(16, 1, SPEED.get("mean"), SPEED.get("max"));
+        restrictions = new String[]{"foot", "access"};
+        restrictedValues.add("private");
+        restrictedValues.add("no");
+        restrictedValues.add("restricted");
+
+        intended.add("yes");
+        intended.add("designated");
+        intended.add("official");
+        intended.add("permissive");
+
+        sidewalks.add("yes");
+        sidewalks.add("both");
+        sidewalks.add("left");
+        sidewalks.add("right");
+
+        ferries.add("shuttle_train");
+        ferries.add("ferry");
     }
 
     public Integer getSpeed(String string) {
-        return SPEED.get(string);
+        Integer speed = SPEED.get(string);
+        if (speed == null)
+            throw new IllegalStateException("foot, no speed found for:" + string);
+        return speed;
     }
 
     @Override public String toString() {
@@ -70,21 +94,56 @@ public class FootFlagEncoder extends AbstractFlagEncoder {
 
     /**
      * Some ways are okay but not separate for pedestrians.
+     *
+     * @param way
      */
     @Override
-    public boolean isAllowed(Map<String, String> osmProperties) {
-        String sidewalkValue = osmProperties.get("sidewalk");
-        if ("yes".equals(sidewalkValue) || "both".equals(sidewalkValue)
-                || "left".equals(sidewalkValue) || "right".equals(sidewalkValue))
-            return true;
-        String footValue = osmProperties.get("foot");
-        if ("yes".equals(footValue))
-            return true;
-        String highwayValue = osmProperties.get("highway");
-        if (!allowedHighwayTags.contains(highwayValue))
-            return false;
-        String accessValue = osmProperties.get("access");
-        return super.isAllowed(accessValue);
+    public int isAllowed(OSMWay way) {
+        String highwayValue = way.getTag("highway");
+        if (highwayValue == null) {
+            if (way.hasTag("route", ferries)) {
+                if (!way.hasTag("foot", "no"))
+                    return acceptBit | ferryBit;
+            }
+            return 0;
+        } else {
+            if (way.hasTag("sidewalk", sidewalks))
+                return acceptBit;
+
+            // no need to evaluate ferries - already included here
+            if (way.hasTag("foot", intended))
+                return acceptBit;
+
+            if (!allowedHighwayTags.contains(highwayValue))
+                return 0;
+
+            if (way.hasTag("motorroad", "yes"))
+                return 0;
+
+            if (way.hasTag("bicycle", "official"))
+                return 0;
+            // check access restrictions
+            if (way.hasTag(restrictions, restrictedValues))
+                return 0;
+
+            return acceptBit;
+        }
+    }
+
+    @Override
+    public int handleWayTags(int allowed, OSMWay way) {
+        if ((allowed & acceptBit) == 0)
+            return 0;
+
+        int encoded;
+        if ((allowed & ferryBit) == 0) {
+            encoded = flagsDefault(true);
+        } else {
+            // TODO read duration and calculate speed 00:30 for ferry            
+            encoded = flagsDefault(true);
+        }
+
+        return encoded;
     }
 
     /**

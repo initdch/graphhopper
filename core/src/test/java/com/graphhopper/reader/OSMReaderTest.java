@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license 
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license 
  *  agreements. See the NOTICE file distributed with this work for 
  *  additional information regarding copyright ownership.
  * 
- *  Peter Karich licenses this file to you under the Apache License, 
+ *  GraphHopper licenses this file to you under the Apache License, 
  *  Version 2.0 (the "License"); you may not use this file except 
  *  in compliance with the License. You may obtain a copy of the 
  *  License at
@@ -34,6 +34,7 @@ import com.graphhopper.util.Helper;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import org.junit.After;
@@ -52,6 +53,7 @@ public class OSMReaderTest {
     private String file2 = "test-osm2.xml";
     private String file3 = "test-osm3.xml";
     private String file4 = "test-osm4.xml";
+    private String file5 = "test-osm-negative-ids.xml";
     private String dir = "./target/tmp/test-db";
     private CarFlagEncoder carEncoder = new CarFlagEncoder();
     private FootFlagEncoder footEncoder = new FootFlagEncoder();
@@ -81,8 +83,12 @@ public class OSMReaderTest {
         @Override protected OSMReader importOSM(String ignore) throws IOException {
             OSMReader osmReader = new OSMReader(buildGraph(dir), 1000);
             osmReader.acceptWay(acceptWay());
-            osmReader.helper().preProcess(getResource(testFile));
-            osmReader.writeOsm2Graph(getResource(testFile));
+            try {
+                osmReader.osm2Graph(new File(getClass().getResource(testFile).toURI()));
+            } catch (URISyntaxException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
+            //osmReader.writeOsm2Graph(getResource(testFile));
             return osmReader;
         }
     }
@@ -146,12 +152,16 @@ public class OSMReaderTest {
         GraphHopper hopper = new GraphHopperTest(file1) {
             @Override protected OSMReader importOSM(String ignore) throws IOException {
                 OSMReader osmReader = new OSMReader(buildGraph(dir), 1000) {
-                    @Override public boolean isInBounds(double lat, double lon) {
-                        return lat > 49 && lon > 8;
+                    @Override public boolean isInBounds(OSMNode node) {
+                        return node.lat() > 49 && node.lon() > 8;
                     }
                 };
-                osmReader.helper().preProcess(getResource(testFile));
-                osmReader.writeOsm2Graph(getResource(testFile));
+                try {
+                    osmReader.osm2Graph(new File(getClass().getResource(testFile).toURI()));
+                } catch (URISyntaxException e) {
+                    e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                }
+                //osmReader.writeOsm2Graph(getResource(testFile));
                 return osmReader;
             }
         };
@@ -192,6 +202,7 @@ public class OSMReaderTest {
         Graph graph = hopper.graph();
 
         int n20 = AbstractGraphTester.getIdOf(graph, 52.0);
+        int n22 = AbstractGraphTester.getIdOf(graph, 52.133);
         int n10 = AbstractGraphTester.getIdOf(graph, 51.2492152);
         int n30 = AbstractGraphTester.getIdOf(graph, 51.2);
         assertEquals(1, GHUtility.count(graph.getEdges(n10, carOutFilter)));
@@ -211,9 +222,21 @@ public class OSMReaderTest {
         assertTrue(encoder.isBackward(iter.flags()));
 
         assertTrue(iter.next());
+        assertEquals(n30, iter.adjNode());
         assertTrue(encoder.isMotorway(iter.flags()));
         assertTrue(encoder.isForward(iter.flags()));
         assertFalse(encoder.isBackward(iter.flags()));
+
+        assertTrue(iter.next());
+        assertTrue(encoder.isMotorway(iter.flags()));
+        assertFalse(encoder.isForward(iter.flags()));
+        assertTrue(encoder.isBackward(iter.flags()));
+
+        assertTrue(iter.next());
+        assertEquals(n22, iter.adjNode());
+        assertFalse(encoder.isMotorway(iter.flags()));
+        assertFalse(encoder.isForward(iter.flags()));
+        assertTrue(encoder.isBackward(iter.flags()));
     }
 
     @Test public void testFerry() {
@@ -229,7 +252,7 @@ public class OSMReaderTest {
     }
 
     @Test public void testMaxSpeed() {
-        GraphHopper hopper = new GraphHopperTest(file2){
+        GraphHopper hopper = new GraphHopperTest(file2) {
             @Override public void cleanUp() {
             }
         }.importOrLoad();
@@ -243,7 +266,7 @@ public class OSMReaderTest {
 
     @Test public void testWayReferencesNotExistingAdjNode() {
         GraphHopper hopper = new GraphHopperTest(file4).
-                acceptWay(new AcceptWay(true, false, true)).
+                acceptWay(new AcceptWay("CAR,FOOT")).
                 importOrLoad();
         Graph graph = hopper.graph();
 
@@ -256,7 +279,7 @@ public class OSMReaderTest {
 
     @Test public void testFoot() {
         GraphHopper hopper = new GraphHopperTest(file3).
-                acceptWay(new AcceptWay(true, false, true)).
+                acceptWay(new AcceptWay("CAR,FOOT")).
                 importOrLoad();
         Graph graph = hopper.graph();
 
@@ -282,5 +305,27 @@ public class OSMReaderTest {
                 footOutFilter)));
         assertEquals(Arrays.asList(n10, n30), GHUtility.neighbors(graph.getEdges(n20,
                 footOutFilter)));
+    }
+
+    @Test public void testNegativeIds() {
+        GraphHopper hopper = new GraphHopperTest(file5).
+                acceptWay(new AcceptWay("CAR")).
+                importOrLoad();
+        Graph graph = hopper.graph();
+        assertEquals(4, graph.nodes());
+        int n20 = AbstractGraphTester.getIdOf(graph, 52);
+        int n10 = AbstractGraphTester.getIdOf(graph, 51.2492152);
+        int n30 = AbstractGraphTester.getIdOf(graph, 51.2);
+        assertEquals(Arrays.asList(n20), GHUtility.neighbors(graph.getEdges(n10, carOutFilter)));
+        assertEquals(3, GHUtility.count(graph.getEdges(n20, carOutFilter)));
+        assertEquals(Arrays.asList(n20), GHUtility.neighbors(graph.getEdges(n30, carOutFilter)));
+
+        EdgeIterator iter = graph.getEdges(n20, carOutFilter);
+        assertTrue(iter.next());
+        assertEquals(n10, iter.adjNode());
+        assertEquals(88643, iter.distance(), 1);
+        assertTrue(iter.next());
+        assertEquals(n30, iter.adjNode());
+        assertEquals(93147, iter.distance(), 1);
     }
 }

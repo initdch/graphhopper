@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license
  *  agreements. See the NOTICE file distributed with this work for
  *  additional information regarding copyright ownership.
  *
- *  Peter Karich licenses this file to you under the Apache License,
+ *  GraphHopper licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the
  *  License at
@@ -18,7 +18,11 @@
  */
 package com.graphhopper.routing.util;
 
+import com.graphhopper.reader.OSMWay;
+
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @author Peter Karich
@@ -37,8 +41,17 @@ public abstract class AbstractFlagEncoder implements EdgePropertyEncoder {
     private final int defaultSpeedPart;
     private final int maxSpeed;
     private final int flagWindow;
+    // bit to signal that way is accepted
+    protected final int acceptBit;
+    protected final int ferryBit;
+    protected String[] restrictions;
+    protected HashSet<String> restrictedValues = new HashSet<String>();
+    protected HashSet<String> ferries = new HashSet<String>();
+    protected HashSet<String> oneways = new HashSet<String>();
 
     public AbstractFlagEncoder(int shift, int factor, int defaultSpeed, int maxSpeed) {
+        this.acceptBit = 1 << shift;
+        this.ferryBit = 2 << shift;
         this.factor = factor;
         this.defaultSpeedPart = defaultSpeed / factor;
         this.maxSpeed = maxSpeed;
@@ -49,12 +62,36 @@ public abstract class AbstractFlagEncoder implements EdgePropertyEncoder {
         FORWARD = 1 << shift;
         BACKWARD = 2 << shift;
         BOTH = 3 << shift;
+
+        oneways.add("yes");
+        oneways.add("true");
+        oneways.add("1");
+        oneways.add("-1");
+        oneways.add("roundabout");
+
+        ferries.add("shuttle_train");
+        ferries.add("ferry");
     }
 
-    public abstract boolean isAllowed(Map<String, String> osmProperties);
-    
-    protected boolean isAllowed(String accessValue) {
-        return !"no".equals(accessValue);
+    /**
+     * Decide whether a way is routable for a given mode of travel
+     *
+     *
+     * @param way
+     * @return the assigned bit of the mode of travel if it is accepted or 0 for
+     * not accepted
+     */
+    public abstract int isAllowed(OSMWay way);
+
+    /**
+     * Analyze properties of a way and create the routing flags
+     *
+     * @param allowed
+     */
+    public abstract int handleWayTags(int allowed, OSMWay way);
+
+    public boolean hasAccepted(int acceptedValue) {
+        return (acceptedValue & acceptBit) > 0;
     }
 
     @Override

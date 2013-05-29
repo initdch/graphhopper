@@ -1,9 +1,9 @@
 /*
- *  Licensed to Peter Karich under one or more contributor license 
+ *  Licensed to GraphHopper and Peter Karich under one or more contributor license 
  *  agreements. See the NOTICE file distributed with this work for 
  *  additional information regarding copyright ownership.
  * 
- *  Peter Karich licenses this file to you under the Apache License, 
+ *  GraphHopper licenses this file to you under the Apache License, 
  *  Version 2.0 (the "License"); you may not use this file except 
  *  in compliance with the License. You may obtain a copy of the 
  *  License at
@@ -29,7 +29,6 @@ import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.EdgeFilter;
 import com.graphhopper.routing.util.FastestCalc;
 import com.graphhopper.routing.util.EdgePropertyEncoder;
-import com.graphhopper.routing.util.FootFlagEncoder;
 import com.graphhopper.routing.util.NoOpAlgorithmPreparation;
 import com.graphhopper.routing.util.PrepareRoutingSubnetworks;
 import com.graphhopper.routing.util.RoutingAlgorithmSpecialAreaTests;
@@ -43,6 +42,7 @@ import com.graphhopper.storage.index.Location2IDIndex;
 import com.graphhopper.storage.index.Location2IDQuadtree;
 import com.graphhopper.storage.MMapDirectory;
 import com.graphhopper.storage.RAMDirectory;
+import com.graphhopper.storage.StorableProperties;
 import com.graphhopper.storage.index.Location2NodesNtree;
 import com.graphhopper.storage.index.Location2NodesNtreeLG;
 import com.graphhopper.util.CmdArgs;
@@ -67,12 +67,8 @@ public class GraphHopper implements GraphHopperAPI {
 
     public static void main(String[] strs) throws Exception {
         CmdArgs args = CmdArgs.read(strs);
-        if (!Helper.isEmpty(args.get("printVersion", ""))
-                || !Helper.isEmpty(args.get("v", "")) || !Helper.isEmpty(args.get("version", ""))) {
-            System.out.println("version " + Constants.VERSION + "|" + Constants.VERSION_FILE + "|" + Constants.BUILD_DATE);
-        }
-
-        GraphHopper hopper = new GraphHopper().init(args).importOrLoad();
+        GraphHopper hopper = new GraphHopper().init(args);
+        hopper.importOrLoad();
         RoutingAlgorithmSpecialAreaTests tests = new RoutingAlgorithmSpecialAreaTests(hopper);
         if (args.getBool("graph.testIT", false))
             tests.start();
@@ -101,9 +97,13 @@ public class GraphHopper implements GraphHopperAPI {
     private boolean chFast = true;
     // for OSM import:
     private String osmFile;
-    private AcceptWay acceptWay = new AcceptWay(true, false, false);
+    private AcceptWay acceptWay = new AcceptWay("CAR");
     private long expectedNodes = 10;
     private double wayPointMaxDistance = 1;
+    private int periodicUpdates = 3;
+    private int lazyUpdates = 10;
+    private int neighborUpdates = 20;
+    private StorableProperties properties;
 
     public GraphHopper() {
     }
@@ -176,7 +176,7 @@ public class GraphHopper implements GraphHopperAPI {
     /**
      * Enables the use of contraction hierarchies to reduce query times.
      *
-     * @param true if fastest route should be calculated (instead of shortest)
+     * @param enable if fastest route should be calculated (instead of shortest)
      */
     public GraphHopper chShortcuts(boolean enable, boolean fast) {
         chUsage = enable;
@@ -220,6 +220,26 @@ public class GraphHopper implements GraphHopperAPI {
         return osmFile;
     }
 
+    public Graph graph() {
+        return graph;
+    }
+
+    public Location2IDIndex index() {
+        return index;
+    }
+
+    public AlgorithmPreparation preparation() {
+        return prepare;
+    }
+
+    /**
+     * @deprecated until #12 is fixed
+     */
+    public GraphHopper sortGraph(boolean sortGraph) {
+        this.sortGraph = sortGraph;
+        return this;
+    }
+
     public GraphHopper init(CmdArgs args) throws IOException {
         if (!Helper.isEmpty(args.get("config", ""))) {
             CmdArgs tmp = CmdArgs.readFromConfig(args.get("config", ""), "graphhopper.config");
@@ -261,6 +281,12 @@ public class GraphHopper implements GraphHopperAPI {
                 || "fastest".equals(chShortcuts) || "shortest".equals(chShortcuts);
         if (levelGraph)
             chShortcuts(true, !"shortest".equals(chShortcuts));
+        if (args.has("prepare.updates.periodic"))
+            periodicUpdates = args.getInt("prepare.updates.periodic", -1);
+        if (args.has("prepare.updates.lazy"))
+            lazyUpdates = args.getInt("prepare.updates.lazy", -1);
+        if (args.has("prepare.updates.neighbor"))
+            neighborUpdates = args.getInt("prepare.updates.neighbor", -1);
 
         // routing
         defaultAlgorithm = args.get("routing.defaultAlgorithm", defaultAlgorithm);
@@ -268,31 +294,44 @@ public class GraphHopper implements GraphHopperAPI {
         // osm import
         wayPointMaxDistance = args.getDouble("osmreader.wayPointMaxDistance", 1);
         String type = args.get("osmreader.acceptWay", "CAR");
-        acceptWay = AcceptWay.parse(type);
+        acceptWay = new AcceptWay(type);
 
         // index
         preciseIndexResolution = args.getInt("index.highResolution", 1000);
         return this;
     }
 
-    public GraphHopper importOrLoad() {
-        if (!load(ghLocation))
-            importOSM(ghLocation, osmFile);
+    private void printInfo(StorableProperties props) {
+        String versionInfoStr = "";
+        if (props != null)
+            versionInfoStr = " | load:" + props.versionsToString();
 
+        logger.info("version " + Constants.VERSION
+                + "|" + Constants.BUILD_DATE + " (" + Constants.getVersions() + ")"
+                + versionInfoStr);
         logger.info("graph " + graph.toString());
+    }
+
+    public GraphHopper importOrLoad() {
+        if (!load(ghLocation)) {
+            printInfo(null);
+            importOSM(ghLocation, osmFile);
+        } else
+            printInfo(properties());
         return this;
     }
 
-    GraphHopper importOSM(String graphHopperLocation, String strOsm) {
+    private GraphHopper importOSM(String graphHopperLocation, String strOsm) {
         graphHopperLocation(graphHopperLocation);
         try {
             OSMReader reader = importOSM(strOsm);
             graph = reader.graph();
         } catch (IOException ex) {
-            throw new RuntimeException("Cannot parse file " + ghLocation, ex);
+            throw new RuntimeException("Cannot parse file " + strOsm, ex);
         }
         cleanUp();
         optimize();
+        prepare();
         flush();
         initIndex();
         return this;
@@ -308,16 +347,15 @@ public class GraphHopper implements GraphHopperAPI {
         OSMReader reader = new OSMReader(graph, expectedNodes);
         reader.acceptWay(acceptWay);
         reader.wayPointMaxDistance(wayPointMaxDistance);
-        reader.osm2Graph(new File(file));
-        return reader;
-    }
 
-    /**
-     * @deprecated until #12 is fixed
-     */
-    public GraphHopper sortGraph(boolean sortGraph) {
-        this.sortGraph = sortGraph;
-        return this;
+        properties.put("osmreader.acceptWay", acceptWay.toString());
+        properties.putCurrentVersions();
+        String info = graph.getClass().getSimpleName()
+                + "|" + graph.directory().getClass().getSimpleName()
+                + "|" + properties.versionsToString();
+        logger.info("using " + info + ", accepts:" + acceptWay + ", memory:" + Helper.memInfo());
+        reader.osm2Graph(osmTmpFile);
+        return reader;
     }
 
     /**
@@ -361,20 +399,21 @@ public class GraphHopper implements GraphHopperAPI {
         } else
             throw new IllegalArgumentException("either memory mapped or in-memory has to be specified!");
 
+        properties = new StorableProperties(dir, "properties");
         if (chUsage) {
             graph = new LevelGraphStorage(dir);
             PrepareContractionHierarchies tmpPrepareCH = new PrepareContractionHierarchies();
 
-            EdgePropertyEncoder encoder;
-            if (acceptWay.acceptsCar())
-                encoder = new CarFlagEncoder();
+            EdgePropertyEncoder encoder = acceptWay.getSingle();
+            if (chFast)
+                tmpPrepareCH.type(new FastestCalc(encoder));
             else
-                encoder = new FootFlagEncoder();
-            if (chFast) {
-                tmpPrepareCH.type(new FastestCalc(encoder)).vehicle(encoder);
-            } else {
-                tmpPrepareCH.type(new ShortestCalc()).vehicle(encoder);
-            }
+                tmpPrepareCH.type(new ShortestCalc());
+            tmpPrepareCH.vehicle(encoder);
+            tmpPrepareCH.periodicUpdates(periodicUpdates).
+                    lazyUpdates(lazyUpdates).
+                    neighborUpdates(neighborUpdates);
+
             prepare = tmpPrepareCH;
             prepare.graph(graph);
         } else {
@@ -385,24 +424,46 @@ public class GraphHopper implements GraphHopperAPI {
         if (!graph.loadExisting())
             return false;
 
+        properties.loadExisting();
+
+        // overwrite configured accept way
+        String acceptStr = properties.get("osmreader.acceptWay");
+        if (!acceptStr.isEmpty())
+            acceptWay = new AcceptWay(acceptStr);
+        properties.checkVersions(false);
+        if ("false".equals(properties.get("prepare.done")))
+            prepare();
+
         initIndex();
         return true;
+    }
+
+    private boolean supportsVehicle(EdgePropertyEncoder encoder) {
+        return acceptWay.accepts(encoder);
     }
 
     @Override
     public GHResponse route(GHRequest request) {
         request.check();
         StopWatch sw = new StopWatch().start();
-        
+        GHResponse rsp = new GHResponse();
+
+        if (!supportsVehicle(request.vehicle())) {
+            rsp.addError(new IllegalArgumentException("Vehicle " + request.vehicle() + " unsupported. Supported are: " + acceptWay()));
+            return rsp;
+        }
+
         EdgeFilter edgeFilter = new DefaultEdgeFilter(request.vehicle());
         int from = index.findClosest(request.from().lat, request.from().lon, edgeFilter).closestNode();
         int to = index.findClosest(request.to().lat, request.to().lon, edgeFilter).closestNode();
         String debug = "idLookup:" + sw.stop().getSeconds() + "s";
-        GHResponse rsp = new GHResponse();
+
         if (from < 0)
             rsp.addError(new IllegalArgumentException("Cannot find point 1: " + request.from()));
         if (to < 0)
             rsp.addError(new IllegalArgumentException("Cannot find point 2: " + request.to()));
+        if (from == to)
+            rsp.addError(new IllegalArgumentException("Point 1 is equal to point 2"));
 
         sw = new StopWatch().start();
         RoutingAlgorithm algo = null;
@@ -460,15 +521,7 @@ public class GraphHopper implements GraphHopperAPI {
             index.prepareIndex();
     }
 
-    public Graph graph() {
-        return graph;
-    }
-
-    public Location2IDIndex index() {
-        return index;
-    }
-
-    void optimize() {
+    private void optimize() {
         logger.info("optimizing ... (" + Helper.memInfo() + ")");
         graph.optimize();
         logger.info("finished optimize (" + Helper.memInfo() + ")");
@@ -480,14 +533,21 @@ public class GraphHopper implements GraphHopperAPI {
             GHUtility.sortDFS(graph, newGraph);
             graph = newGraph;
         }
+    }
 
-        if (doPrepare && prepare != null) {
+    public void prepare() {
+        boolean tmpPrepare = doPrepare && prepare != null;
+        properties.put("prepare.done", tmpPrepare);
+        if (tmpPrepare) {
+            if (prepare instanceof PrepareContractionHierarchies && acceptWay.countVehicles() > 1)
+                throw new IllegalArgumentException("Contraction hierarchies preparation "
+                        + "requires (at the moment) only one vehicle. But was:" + acceptWay);
             logger.info("calling prepare.doWork ... (" + Helper.memInfo() + ")");
             prepare.doWork();
         }
     }
 
-    public void cleanUp() {
+    protected void cleanUp() {
         int prev = graph.nodes();
         PrepareRoutingSubnetworks preparation = new PrepareRoutingSubnetworks(graph);
         logger.info("start finding subnetworks, " + Helper.memInfo());
@@ -499,21 +559,17 @@ public class GraphHopper implements GraphHopperAPI {
                 + " less nodes. Remaining subnetworks:" + preparation.findSubnetworks().size());
     }
 
-    void flush() {
-        logger.info("flushing graph with " + graph.nodes() + " nodes, bounds:"
-                + graph.bounds() + ", " + Helper.memInfo() + ")");
+    private void flush() {
+        logger.info("flushing graph " + graph.toString() + ", " + Helper.memInfo() + ")");
         graph.flush();
-    }
-
-    public AlgorithmPreparation preparation() {
-        return prepare;
-    }
-
-    public void prepare(boolean bool) {
-        doPrepare = bool;
+        properties.flush();
     }
 
     void close() {
         graph.close();
+    }
+
+    StorableProperties properties() {
+        return properties;
     }
 }
