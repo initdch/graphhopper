@@ -18,6 +18,8 @@
  */
 package com.graphhopper.storage;
 
+import com.graphhopper.util.Helper;
+import java.io.File;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -25,21 +27,59 @@ import static org.junit.Assert.*;
  *
  * @author Peter Karich
  */
-public class StorablePropertiesTest {
+public class StorablePropertiesTest
+{
+    @Test
+    public void testLoad()
+    {
+        StorableProperties instance = new StorableProperties(new RAMDirectory("", false));
+        // an in-memory storage does not load anything
+        assertFalse(instance.loadExisting());
+
+        instance = new StorableProperties(new RAMDirectory("", true));
+        assertFalse(instance.loadExisting());
+        instance.close();
+    }
 
     @Test
-    public void testVersionCheck() {
-        StorableProperties instance = new StorableProperties(new RAMDirectory("", false), "prop");
+    public void testVersionCheck()
+    {
+        StorableProperties instance = new StorableProperties(new RAMDirectory("", false));
         instance.putCurrentVersions();
         assertTrue(instance.checkVersions(true));
 
         instance.put("nodes.version", 0);
         assertFalse(instance.checkVersions(true));
 
-        try {
+        try
+        {
             instance.checkVersions(false);
             assertTrue(false);
-        } catch (Exception ex) {
+        } catch (Exception ex)
+        {
         }
+        instance.close();
+    }
+
+    @Test
+    public void testStore()
+    {
+        String dir = "./target/test";
+        Helper.removeDir(new File(dir));
+        StorableProperties instance = new StorableProperties(new RAMDirectory(dir, true));
+        instance.create(1000);
+        instance.put("test.min", 123);
+        instance.put("test.max", 321);
+
+        instance.flush();
+        instance.close();
+
+        instance = new StorableProperties(new RAMDirectory(dir, true));
+        assertTrue(instance.loadExisting());
+        assertEquals("123", instance.get("test.min"));
+        assertEquals("321", instance.get("test.max"));
+        instance.close();
+
+        Helper.removeDir(new File(dir));
     }
 }

@@ -29,29 +29,93 @@ import static org.junit.Assert.*;
  *
  * @author Peter Karich
  */
-public class CarFlagEncoderTest {
-
-    private CarFlagEncoder encoder = new CarFlagEncoder();
+public class CarFlagEncoderTest
+{
+    private EncodingManager em = new EncodingManager("CAR,BIKE,FOOT");
+    private CarFlagEncoder encoder = (CarFlagEncoder) em.getEncoder("CAR");
 
     @Test
-    public void testAccess() {
+    public void testAccess()
+    {
         Map<String, String> map = new HashMap<String, String>();
-        OSMWay way = new OSMWay();
-        way.setTags(map);
+        OSMWay way = new OSMWay(1, map);
         assertFalse(encoder.isAllowed(way) > 0);
         map.put("highway", "service");
         assertTrue(encoder.isAllowed(way) > 0);
         map.put("access", "no");
         assertFalse(encoder.isAllowed(way) > 0);
-        map.clear();
 
+        map.clear();
         map.put("highway", "track");
+        map.put("motorcar", "no");
+        assertFalse(encoder.isAllowed(way) > 0);
+
+        map.clear();
+        map.put("highway", "unclassified");
+        map.put("ford", "yes");
+        assertFalse(encoder.isAllowed(way) > 0);
+        map.put("motorcar", "yes");
+        assertTrue(encoder.isAllowed(way) > 0);
+        
+        map.clear();        
+        map.put("route", "ferry");
+        assertTrue(encoder.isAllowed(way) > 0);
         map.put("motorcar", "no");
         assertFalse(encoder.isAllowed(way) > 0);
     }
 
     @Test
-    public void testBasics() {
+    public void testSpeedLimitBiggerThanMaxValue()
+    {
+        Map<String, String> map = new HashMap<String, String>();
+        OSMWay way = new OSMWay(1, map);
+        map.put("highway", "trunk");
+        map.put("maxspeed", "500");
+        int allowed = encoder.isAllowed(way);
+        int encoded = encoder.handleWayTags(allowed, way);
+        assertEquals(100, encoder.getSpeed(encoded));                
+    }
+
+    @Test
+    public void testSpeed()
+    {
+        // limit bigger than default road speed
+        Map<String, String> map = new HashMap<String, String>();
+        OSMWay way = new OSMWay(1, map);
+        map.put("highway", "trunk");
+        map.put("maxspeed", "110");
+        int allowed = encoder.isAllowed(way);
+        int encoded = encoder.handleWayTags(allowed, way);
+        assertEquals(95, encoder.getSpeed(encoded));
+        
+        map.clear();
+        map.put("highway", "residential");
+        map.put("surface", "cobblestone");
+        allowed = encoder.isAllowed(way);        
+        encoded = encoder.handleWayTags(allowed, way);
+        assertEquals(30, encoder.getSpeed(encoded));
+    }
+
+    @Test
+    public void testRailway()
+    {        
+        Map<String, String> map = new HashMap<String, String>();
+        OSMWay way = new OSMWay(1, map);
+        map.put("highway", "secondary");
+        map.put("railway", "rail");
+        // disallow rail
+        assertEquals(0, encoder.isAllowed(way));
+
+        way = new OSMWay(1, map);
+        map.put("highway", "secondary");
+        map.put("railway", "tram");
+        // but allow tram to be on the same way
+        assertNotSame(0, encoder.isAllowed(way));
+    }
+
+    @Test
+    public void testBasics()
+    {
         assertTrue(encoder.isForward(encoder.flagsDefault(true)));
         assertTrue(encoder.isBackward(encoder.flagsDefault(true)));
         assertTrue(encoder.isBoth(encoder.flagsDefault(true)));
@@ -62,7 +126,8 @@ public class CarFlagEncoderTest {
     }
 
     @Test
-    public void testOverwrite() {
+    public void testOverwrite()
+    {
         int forward = encoder.flags(10, false);
         int backward = encoder.swapDirection(forward);
         int both = encoder.flags(20, true);
@@ -79,7 +144,8 @@ public class CarFlagEncoderTest {
     }
 
     @Test
-    public void testSwapDir() {
+    public void testSwapDir()
+    {
         int swappedFlags = encoder.swapDirection(encoder.flagsDefault(true));
         assertTrue(encoder.isForward(swappedFlags));
         assertTrue(encoder.isBackward(swappedFlags));
@@ -90,13 +156,5 @@ public class CarFlagEncoderTest {
         assertTrue(encoder.isBackward(swappedFlags));
 
         assertEquals(0, encoder.swapDirection(0));
-    }
-
-    @Test
-    public void testService() {
-        int flags = encoder.flags(encoder.getSpeed("service"), true);
-        assertTrue(encoder.isForward(flags));
-        assertTrue(encoder.isBackward(flags));
-        assertTrue(encoder.isService(flags));
     }
 }

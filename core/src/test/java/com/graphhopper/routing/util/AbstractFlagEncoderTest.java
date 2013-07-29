@@ -18,41 +18,26 @@
  */
 package com.graphhopper.routing.util;
 
+import org.junit.Test;
+import static org.junit.Assert.*;
+
 /**
- * This class provides methods to define how a value (like speed or direction)
- * converts to a flag (currently an integer value), which is stored in an edge .
  *
  * @author Peter Karich
  */
-public interface EdgePropertyEncoder {
-
-    /**
-     * @param speed the speed in km/h
-     */
-    int flags(int speed, boolean bothDir);
-
-    /**
-     * @return the speed in km/h
-     */
-    int getSpeed(int flags);
-
-    boolean isForward(int flags);
-
-    boolean isBackward(int flags);
-
-    /**
-     * @return the maximum speed in km/h
-     */
-    int getMaxSpeed();
-
-    /**
-     * Returns true if flags1 can be overwritten by flags2 without restricting
-     * or changing the directions of flags1.
-     */
-    //        \  flags2:
-    // flags1  \ -> | <- | <->
-    // ->         t | f  | t
-    // <-         f | t  | t
-    // <->        f | f  | t
-    boolean canBeOverwritten(int flags1, int flags2);
+public class AbstractFlagEncoderTest
+{
+    @Test
+    public void testAcceptsCar()
+    {
+        assertEquals(40, AbstractFlagEncoder.parseSpeed("40 km/h"));
+        assertEquals(40, AbstractFlagEncoder.parseSpeed("40km/h"));
+        assertEquals(40, AbstractFlagEncoder.parseSpeed("40kmh"));
+        assertEquals(64, AbstractFlagEncoder.parseSpeed("40mph"));
+        assertEquals(48, AbstractFlagEncoder.parseSpeed("30 mph"));
+        assertEquals(-1, AbstractFlagEncoder.parseSpeed(null));
+        assertEquals(19, AbstractFlagEncoder.parseSpeed("10 knots"));
+        assertEquals(19, AbstractFlagEncoder.parseSpeed("19 kph"));
+        assertEquals(19, AbstractFlagEncoder.parseSpeed("19kph"));
+    }
 }

@@ -18,20 +18,41 @@
  */
 package com.graphhopper.routing.util;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
-
 /**
- *
+ * This class provides methods to define how a value (like speed or direction) converts to a flag
+ * (currently an integer value), which is stored in an edge .
+ * <p/>
  * @author Peter Karich
  */
-public class AcceptWayTest {
+public interface FlagEncoder
+{
+    /**
+     * @deprecated @param speed the speed in km/h
+     */
+    int flags( int speed, boolean bothDir );
 
-    @Test
-    public void testAcceptsCar() {
-        assertEquals(40, AcceptWay.parseSpeed("40 km/h"));
-        assertEquals(64, AcceptWay.parseSpeed("40mph"));
-        assertEquals(-1, AcceptWay.parseSpeed(null));
-        assertEquals(19, AcceptWay.parseSpeed("10 knots"));
-    }
+    /**
+     * @return the speed in km/h
+     */
+    int getSpeed( int flags );
+
+    boolean isForward( int flags );
+
+    boolean isBackward( int flags );
+
+    /**
+     * @return the maximum speed in km/h
+     */
+    int getMaxSpeed();
+
+    /**
+     * Returns true if flags1 can be overwritten by flags2 without restricting or changing the
+     * directions of flags1.
+     */
+    //        \  flags2:
+    // flags1  \ -> | <- | <->
+    // ->         t | f  | t
+    // <-         f | t  | t
+    // <->        f | f  | t
+    boolean canBeOverwritten( int flags1, int flags2 );
 }
