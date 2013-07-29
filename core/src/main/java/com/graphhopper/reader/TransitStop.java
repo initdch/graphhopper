@@ -136,7 +136,7 @@ public class TransitStop {
      */
     public int addDepartureNode(StopTime stopTime) {
         int time = stopTime.getDepartureTime();
-        TransitNode transitNode = transitNodes.floor(new TransitNode(graph.nodes(), time));
+        TransitNode transitNode = transitNodes.floor(new TransitNode(graph.getNodes(), time));
         int departureNodeId = getNewNodeId();
 
         // Add departure node to the graph
@@ -156,7 +156,7 @@ public class TransitStop {
      */
     public int addArrivalNode(StopTime stopTime) {
         int time = stopTime.getArrivalTime() + alightTime;
-        TransitNode transitNode = transitNodes.floor(new TransitNode(graph.nodes(), time));
+        TransitNode transitNode = transitNodes.floor(new TransitNode(graph.getNodes(), time));
         int arrivalNodeId = getNewNodeId();
 
         // Add arrival node to the graph

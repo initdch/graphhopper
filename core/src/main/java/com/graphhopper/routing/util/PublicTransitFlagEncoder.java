@@ -19,7 +19,7 @@ package com.graphhopper.routing.util;
  *
  * @author Thomas Buerli <tbuerli@student.ethz.ch>
  */
-public class PublicTransitFlagEncoder implements EdgePropertyEncoder {
+public class PublicTransitFlagEncoder implements FlagEncoder {
 
     private final int FORWARD;
     private final int BACKWARD;

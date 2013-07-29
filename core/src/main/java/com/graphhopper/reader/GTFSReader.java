@@ -255,75 +255,12 @@ public class GTFSReader {
     public synchronized void close(){
         nodeId = 0;
     }
-    
-    /**
-     * Just for debugging path which generated which uses graph generated with
-     * GTFSReader
-     * 
-     * Patterns used:
-     * Transit      ---
-     * Traveling     ===
-     * Boarding     __/
-     * Alight       \__
-     * Finish       --|
-     * Error        < E >
-     * @param path 
-     */
-    public void debugPath(Path path, final int startTime) {
-        
-        
-        // Make sure name index is generated
-        getNameIndex();
-        
-        Path.EdgeVisitor visitor = new Path.EdgeVisitor() {
-            private final PublicTransitFlagEncoder encoder = new PublicTransitFlagEncoder();
-            private boolean onTrain = false;
-            private double time = startTime;
-
-            @Override
-            public void next(EdgeIterator iter) {
-                int flags = iter.flags();
-                String output = new String();
-                output += "(" + iter.adjNode() + ")";
-                time += iter.distance();
-                if (!onTrain && encoder.isTransit(flags)) {
-                    // Transit edge
-                    output += " --- ";
-                } else if (!onTrain && encoder.isBoarding(flags)) {
-                    // Boarding edge
-                    onTrain = true;
-                    output += " __/ ";
-                } else if (onTrain && encoder.isAlight(flags)) {
-                    // Alight edge
-                    onTrain = false;
-                    output += " \\__ ";
-                } else if (!onTrain && encoder.isExit(flags)) {
-                        // Get off
-                        output += " --| ";
-                } else if (onTrain && encoder.isBackward(flags)) {
-                        // Travling
-                        output += " === ";
-                } else {
-                    // Wrong edge
-                    output += " < E > ";
-                }
-
-                output +=  nameIndex.findName(iter.baseNode()) + " (" + iter.baseNode() + ")";
-                output += " " + TimeUtils.formatTime((int) time);
-                System.out.println(output);
-            }
-        };
-        path.forEveryEdge(visitor);
-    }
+  
 
     private void checkTime(int travelTime) {
         if (travelTime < 0) {
             throw new RuntimeException("Negative travel time!");
         }
-    }
-
-    void debugPath(Path path) {
-        debugPath(path,0);
     }
 
     private void prepare(long expectedNodes) {

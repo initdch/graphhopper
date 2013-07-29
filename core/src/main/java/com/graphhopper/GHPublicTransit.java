@@ -18,11 +18,7 @@ package com.graphhopper;
 import com.graphhopper.reader.GTFSReader;
 import com.graphhopper.routing.Path;
 import com.graphhopper.routing.RoutingAlgorithm;
-import com.graphhopper.routing.util.AlgorithmPreparation;
-import com.graphhopper.routing.util.DefaultEdgeFilter;
-import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.routing.util.NoOpAlgorithmPreparation;
-import com.graphhopper.routing.util.PublicTransitFlagEncoder;
+import com.graphhopper.routing.util.*;
 import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.GraphStorage;
@@ -48,6 +44,7 @@ public class GHPublicTransit implements GraphHopperAPI {
 
     private Logger logger = LoggerFactory.getLogger(getClass());
     // for graph:
+    private EncodingManager encodingManager;
     private GraphStorage graph;
     private String ghLocation = "";
     private boolean inMemory = true;
@@ -227,10 +224,10 @@ public class GHPublicTransit implements GraphHopperAPI {
         } else {
             throw new IllegalArgumentException("either memory mapped or in-memory has to be specified!");
         }
-
-        properties = new StorableProperties(dir, "properties");
-        graph = new GraphStorage(dir);
-        prepare = NoOpAlgorithmPreparation.createAlgoPrepare(graph, defaultAlgorithm, new PublicTransitFlagEncoder());
+        encodingManager = new EncodingManager("TRANSIT:com.graphhopper.routing.util.PublicTransitFlagEncoder");
+        properties = new StorableProperties(dir);
+        graph = new GraphStorage(dir,encodingManager);
+        //prepare = NoOpAlgorithmPreparation.createAlgoPrepare(graph, defaultAlgorithm, new PublicTransitFlagEncoder());
 
         if (!graph.loadExisting()) {
             return false;
@@ -250,7 +247,7 @@ public class GHPublicTransit implements GraphHopperAPI {
         boolean tmpPrepare = doPrepare && prepare != null;
         properties.put("prepare.done", tmpPrepare);
         if (tmpPrepare) {
-            logger.info("calling prepare.doWork ... (" + Helper.memInfo() + ")");
+            logger.info("calling prepare.doWork ... (" + Helper.getMemInfo() + ")");
             prepare.doWork();
         }
     }
@@ -261,8 +258,8 @@ public class GHPublicTransit implements GraphHopperAPI {
         StopWatch sw = new StopWatch().start();
         GHResponse rsp = new GHResponse();
 
-
-        EdgeFilter edgeFilter = new DefaultEdgeFilter(request.vehicle());
+        
+        EdgeFilter edgeFilter = new DefaultEdgeFilter(request.getVehicle());
         int from = index.findID(request.from().lat, request.from().lon, request.from().getTime());
         int to = index.findExitNode(request.to().lat, request.to().lon);
         String debug = "idLookup:" + sw.stop().getSeconds() + "s";
