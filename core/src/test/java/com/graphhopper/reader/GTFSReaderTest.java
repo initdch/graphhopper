@@ -41,7 +41,6 @@ import org.junit.Before;
 public class GTFSReaderTest {
 
     private String dir = "./target/tmp/";
-    private String file1 = "test-gtfs1.zip";
     private String file2 = "test-gtfs2.zip";
     private PublicTransitFlagEncoder encoder = new PublicTransitFlagEncoder();
     private EdgeFilter outFilter = new DefaultEdgeFilter(encoder, false, true);
@@ -71,7 +70,7 @@ public class GTFSReaderTest {
 
     @Test
     public void testRead() {
-        GHPublicTransit hopper = new GHPublicTransitTest(file2).importOrLoad();
+        GHPublicTransit hopper = new GTFSReaderTest.GHPublicTransitTest(file2).importOrLoad();
         Graph graph = hopper.graph();
         assertEquals(142, graph.nodes());
         assertEquals(0, AbstractGraphTester.getIdOf(graph, 36.915682));
@@ -109,7 +108,14 @@ public class GTFSReaderTest {
         iter = graph.getEdges(3, outFilter);
         assertTrue(iter.next());
         assertTrue(iter.next());
-        assertEquals(5, iter.adjNode());
+        assertEquals(2, iter.adjNode());
+    }
+    
+    @Test
+    public void testTransfer() {
+        GHPublicTransit hopper = new GTFSReaderTest.GHPublicTransitTest(file2).importOrLoad();
+        Graph graph = hopper.graph();
+        
     }
 
     private class GHPublicTransitTest extends GHPublicTransit {

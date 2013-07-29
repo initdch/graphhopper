@@ -16,8 +16,6 @@
 package com.graphhopper.reader;
 
 import com.graphhopper.routing.Path;
-import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.routing.util.PublicTransitEdgeFilter;
 import com.graphhopper.routing.util.PublicTransitFlagEncoder;
 import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.GraphStorage;
@@ -103,10 +101,15 @@ public class GTFSReader {
     private void loadStops(GtfsRelationalDaoImpl store) {
         logger.info("Importing stations ...");
         for (Stop stop : store.getAllStops()) {
+            // Check if stop has any stoptimes
+            Collection<StopTime> stopTimes = store.getStopTimesForStop(stop);
+            if (stopTimes.isEmpty())
+                // Has no stoptimes, so ignore this stop
+                continue;
             TransitStop transitStop = new TransitStop(graph, stop,defaultAlightTime);
             stopNodes.put(stop, transitStop);
 
-            for (StopTime stopTime : store.getStopTimesForStop(stop)) {
+            for (StopTime stopTime : stopTimes) {
                 transitStop.addTransitNode(stopTime);
             }
             transitStop.buildTransitNodes();
@@ -186,7 +189,7 @@ public class GTFSReader {
             TransitStop to = stopNodes.get(transfer.getToStop());
             if (from != null && to != null) {
                 int time = transfer.getMinTransferTime();
-                from.addTransfer(to, time);
+                to.addTransfer(from, time);
             }
         }
     }
