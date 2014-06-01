@@ -18,11 +18,10 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.util.Weighting;
 import com.graphhopper.storage.EdgeEntry;
 import com.graphhopper.storage.Graph;
-import com.graphhopper.util.DistanceCalc;
-import com.graphhopper.util.DistancePlaneProjection;
-import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.*;
 import gnu.trove.map.TIntObjectMap;
 import gnu.trove.map.hash.TIntObjectHashMap;
 import java.util.PriorityQueue;
@@ -37,13 +36,20 @@ import java.util.PriorityQueue;
  */
 public class AStar extends AbstractRoutingAlgorithm
 {
-    private DistanceCalc dist = new DistancePlaneProjection();
-    private boolean alreadyRun;
+    private DistanceCalc dist;
     private int visitedCount;
+    private TIntObjectMap<AStarEdge> fromMap;
+    private PriorityQueue<AStarEdge> prioQueueOpenSet;
+    private AStarEdge currEdge;
+    private int to1 = -1;
+    private double toLat;
+    private double toLon;
 
-    public AStar( Graph g, FlagEncoder encoder )
+    public AStar( Graph g, FlagEncoder encoder, Weighting weighting )
     {
-        super(g, encoder);
+        super(g, encoder, weighting);
+        initCollections(1000);
+        setApproximation(true);
     }
 
     /**
@@ -52,61 +58,64 @@ public class AStar extends AbstractRoutingAlgorithm
     public AStar setApproximation( boolean approx )
     {
         if (approx)
-        {
             dist = new DistancePlaneProjection();
-        } else
-        {
-            dist = new DistanceCalc();
-        }
+        else
+            dist = new DistanceCalcEarth();
+
         return this;
+    }
+
+    protected void initCollections( int size )
+    {
+        fromMap = new TIntObjectHashMap<AStarEdge>();
+        prioQueueOpenSet = new PriorityQueue<AStarEdge>(size);
     }
 
     @Override
     public Path calcPath( int from, int to )
     {
-        if (alreadyRun)
-        {
-            throw new IllegalStateException("Create a new instance per call");
-        }
-        alreadyRun = true;
-        TIntObjectMap<AStarEdge> map = new TIntObjectHashMap<AStarEdge>();
-        PriorityQueue<AStarEdge> prioQueueOpenSet = new PriorityQueue<AStarEdge>(1000);
-        double toLat = graph.getLatitude(to);
-        double toLon = graph.getLongitude(to);
+        checkAlreadyRun();
+        toLat = graph.getLatitude(to);
+        toLon = graph.getLongitude(to);
+        to1 = to;
+        currEdge = createEdgeEntry(from, 0);
+        fromMap.put(from, currEdge);
+        return runAlgo();
+    }
+
+    private Path runAlgo()
+    {
         double currWeightToGoal, distEstimation, tmpLat, tmpLon;
-        AStarEdge fromEntry = new AStarEdge(EdgeIterator.NO_EDGE, from, 0, 0);
-        map.put(from, fromEntry);
-        AStarEdge currEdge = fromEntry;
+        EdgeExplorer explorer = outEdgeExplorer;
         while (true)
         {
             int currVertex = currEdge.endNode;
             visitedCount++;
-            if (finished(currEdge, to))
-            {
+            if (finished())
                 break;
-            }
 
-            EdgeIterator iter = getNeighbors(currVertex);
+            EdgeIterator iter = explorer.setBaseNode(currVertex);
             while (iter.next())
             {
                 if (!accept(iter))
-                {
                     continue;
-                }
+                if (currEdge.edge == iter.getEdge())
+                    continue;
+
                 int neighborNode = iter.getAdjNode();
-                double alreadyVisitedWeight = weightCalc.getWeight(iter.getDistance(), iter.getFlags()) + currEdge.weightToCompare;
-                AStarEdge nEdge = map.get(neighborNode);
+                double alreadyVisitedWeight = weighting.calcWeight(iter) + currEdge.weightToCompare;
+                AStarEdge nEdge = fromMap.get(neighborNode);
                 if (nEdge == null || nEdge.weightToCompare > alreadyVisitedWeight)
                 {
                     tmpLat = graph.getLatitude(neighborNode);
                     tmpLon = graph.getLongitude(neighborNode);
                     currWeightToGoal = dist.calcDist(toLat, toLon, tmpLat, tmpLon);
-                    currWeightToGoal = weightCalc.getMinWeight(currWeightToGoal);
+                    currWeightToGoal = weighting.getMinWeight(currWeightToGoal);
                     distEstimation = alreadyVisitedWeight + currWeightToGoal;
                     if (nEdge == null)
                     {
                         nEdge = new AStarEdge(iter.getEdge(), neighborNode, distEstimation, alreadyVisitedWeight);
-                        map.put(neighborNode, nEdge);
+                        fromMap.put(neighborNode, nEdge);
                     } else
                     {
                         prioQueueOpenSet.remove(nEdge);
@@ -121,34 +130,38 @@ public class AStar extends AbstractRoutingAlgorithm
             }
 
             if (prioQueueOpenSet.isEmpty())
-            {
-                return new Path(graph, flagEncoder);
-            }
+                return createEmptyPath();
 
             currEdge = prioQueueOpenSet.poll();
             if (currEdge == null)
-            {
-                throw new AssertionError("cannot happen?");
-            }
+                throw new AssertionError("Empty edge cannot happen");
         }
 
-        return extractPath(currEdge);
+        return extractPath();
     }
 
-    boolean finished( EdgeEntry currEdge, int to )
+    @Override
+    protected Path extractPath()
     {
-        return currEdge.endNode == to;
+        return new Path(graph, flagEncoder).setEdgeEntry(currEdge).extract();
+    }
+
+    @Override
+    protected AStarEdge createEdgeEntry( int node, double dist )
+    {
+        return new AStarEdge(EdgeIterator.NO_EDGE, node, dist, dist);
+    }
+
+    @Override
+    protected boolean finished()
+    {
+        return currEdge.endNode == to1;
     }
 
     @Override
     public int getVisitedNodes()
     {
         return visitedCount;
-    }
-
-    Path extractPath( EdgeEntry currEdge )
-    {
-        return new Path(graph, flagEncoder).setEdgeEntry(currEdge).extract();
     }
 
     public static class AStarEdge extends EdgeEntry

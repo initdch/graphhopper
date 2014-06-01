@@ -23,81 +23,30 @@ package com.graphhopper.util;
  * <p/>
  * Usage:
  * <pre>
- * // calls to iter.adjNode(), distance() without next() will cause undefined behaviour
- * EdgeIterator iter = graph.getOutgoing(nodeId);
- * // or similar
- * EdgeIterator iter = graph.getIncoming(nodeId);
+ * EdgeExplorer explorer = graph.createEdgeExplorer();
+ * EdgeIterator iter = explorer.setBaseNode(nodeId);
+ * // calls to iter.getAdjNode(), getDistance() without calling next() will cause undefined behaviour!
  * while(iter.next()) {
- *   int baseNodeId = iter.baseNode(); // equal to nodeId
- *   int adjacentNodeId = iter.adjNode();
+ *   int baseNodeId = iter.getBaseNode(); // equal to nodeId
+ *   int adjacentNodeId = iter.getAdjNode(); // this is the node where this edge state is "pointing to"
  *   ...
  * }
  *
+ * @see EdgeIteratorState
+ * @see EdgeExplorer
  * @author Peter Karich
  */
-public interface EdgeIterator
+public interface EdgeIterator extends EdgeIteratorState
 {
     /**
-     * To be called to go to the next edge
+     * To be called to go to the next edge state.
      */
     boolean next();
 
     /**
-     * @return the edge id of the current edge. Do not make any assumptions about the concrete
-     * values, except that for an implemention it is recommended that they'll be contiguous.
+     * Creates an edge object from the EdgeIterator its current state.
      */
-    int getEdge();
-
-    /**
-     * Returns the node used to instantiate the EdgeIterator. Example: "EdgeIterator iter =
-     * graph.getEdges(baseNode)". Often only used for convenience reasons. Do not confuse this with
-     * a <i>source node</i> of a directed edge.
-     * <p/>
-     * @return the requested node itself
-     * @see EdgeIterator
-     */
-    int getBaseNode();
-
-    /**
-     * @return the adjacent node of baseNode for the current edge.
-     * @see EdgeIterator
-     */
-    int getAdjNode();
-
-    /**
-     * For OSM a way is often a curve not just a straight line and nodes between tower nodes are
-     * necessary to have a more exact geometry. Those nodes are called pillar nodes and will be
-     * returned in this method.
-     * <p/>
-     * @return pillar nodes
-     */
-    PointList getWayGeometry();
-
-    /**
-     * @param list is a sorted collection of nodes between the baseNode and the current adjacent
-     * node
-     */
-    void setWayGeometry( PointList list );
-
-    /**
-     * @return the distance of the current edge edge
-     */
-    double getDistance();
-
-    void setDistance( double dist );
-
-    int getFlags();
-
-    void setFlags( int flags );
-
-    String getName();
-
-    void setName( String name );
-
-    /**
-     * @return true if no data is available where we could iterate over
-     */
-    boolean isEmpty();
+    EdgeIteratorState detach();
     /**
      * integer value to indicate if an edge is valid or not which then would be initialized with
      * this value

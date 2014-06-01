@@ -32,7 +32,7 @@ import java.util.*;
  * @author Peter Karich
  */
 public class InstructionList
-{    
+{
     public static final int TURN_SHARP_LEFT = -3;
     public static final int TURN_LEFT = -2;
     public static final int TURN_SLIGHT_LEFT = -1;
@@ -91,9 +91,7 @@ public class InstructionList
         for (int i = 0; i < indications.size(); i++)
         {
             if (i > 0)
-            {
                 sb.append(", ");
-            }
 
             sb.append('(');
             sb.append(indications.get(i));
@@ -124,50 +122,40 @@ public class InstructionList
         return distances;
     }
 
-    public List<String> createDistances( Locale locale )
+    public List<String> createDistances( Translation tr, boolean mile )
     {
         // United Kingdom, Canada, Ireland, Australia, the Bahamas, India, and Malaysia 
         // still use some forms of the Imperial System, but are official Metric Nations
         List<String> labels = new ArrayList<String>(distances.size());
-        String country = locale.getCountry();
-        boolean mile = Locale.US.getCountry().equals(country)
-                || Locale.UK.getCountry().equals(country)
-                || Locale.CANADA.getCountry().equals(country);
-
+        String country = tr.getLocale().getCountry();
         for (int i = 0; i < distances.size(); i++)
         {
             double dist = distances.get(i);
             if (mile)
             {
                 // calculate miles
-                double distInMiles = dist / 1000 / DistanceCalc.KM_MILE;
+                double distInMiles = dist / 1000 / DistanceCalcEarth.KM_MILE;
                 if (distInMiles < 0.9)
                 {
-                    labels.add((int) DistanceCalc.round(distInMiles * 5280, 1) + " ft");
+                    labels.add((int) DistanceCalcEarth.round(distInMiles * 5280, 1) + " " + tr.tr("ftAbbr"));
                 } else
                 {
                     if (distInMiles < 100)
-                    {
-                        labels.add(DistanceCalc.round(distInMiles, 2) + " miles");
-                    } else
-                    {
-                        labels.add((int) DistanceCalc.round(distInMiles, 1) + " miles");
-                    }
+                        labels.add(DistanceCalcEarth.round(distInMiles, 2) + " " + tr.tr("miAbbr"));
+                    else
+                        labels.add((int) DistanceCalcEarth.round(distInMiles, 1) + " " + tr.tr("miAbbr"));
                 }
             } else
             {
                 if (dist < 950)
                 {
-                    labels.add((int) DistanceCalc.round(dist, 1) + " m");
+                    labels.add((int) DistanceCalcEarth.round(dist, 1) + " " + tr.tr("mAbbr"));
                 } else
                 {
                     if (dist < 100000)
-                    {
-                        labels.add(DistanceCalc.round(dist / 1000, 2) + " km");
-                    } else
-                    {
-                        labels.add((int) DistanceCalc.round(dist / 1000, 1) + " km");
-                    }
+                        labels.add(DistanceCalcEarth.round(dist / 1000, 2) + " " + tr.tr("kmAbbr"));
+                    else
+                        labels.add((int) DistanceCalcEarth.round(dist / 1000, 1) + " " + tr.tr("kmAbbr"));
                 }
             }
         }
@@ -175,7 +163,7 @@ public class InstructionList
     }
 
     public List<String> createDescription( Translation tr )
-    {        
+    {
         String shLeftTr = tr.tr("sharp_left");
         String shRightTr = tr.tr("sharp_right");
         String slLeftTr = tr.tr("slight_left");
@@ -217,9 +205,7 @@ public class InstructionList
                         break;
                 }
                 if (dir == null)
-                {
                     throw new IllegalStateException("Indication not found " + indi);
-                }
 
                 str = Helper.isEmpty(n) ? tr.tr("turn", dir) : tr.tr("turn_onto", dir, n);
             }
@@ -228,6 +214,9 @@ public class InstructionList
         return instructions;
     }
 
+    /**
+     * Sets the last added distance to the specified value.
+     */
     public void updateLastDistance( double prevDist )
     {
         if (distances.isEmpty())

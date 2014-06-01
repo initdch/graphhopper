@@ -88,12 +88,12 @@ public class CarFlagEncoder extends AbstractFlagEncoder
         Integer speed = SPEED.get(string);
         if (speed == null)
             throw new IllegalStateException("car, no speed found for:" + string);
-        
+
         return speed;
     }
 
     @Override
-    public int isAllowed( OSMWay way )
+    public long isAllowed( OSMWay way )
     {
         String highwayValue = way.getTag("highway");
         if (highwayValue == null)
@@ -104,7 +104,8 @@ public class CarFlagEncoder extends AbstractFlagEncoder
                 if (motorcarTag == null)
                     motorcarTag = way.getTag("motor_vehicle");
 
-                if (motorcarTag == null || "yes".equals(motorcarTag))
+                if (motorcarTag == null && !way.hasTag("foot") && !way.hasTag("bicycle")
+                        || "yes".equals(motorcarTag))
                     return acceptBit | ferryBit;
             }
             return 0;
@@ -130,12 +131,12 @@ public class CarFlagEncoder extends AbstractFlagEncoder
     }
 
     @Override
-    public int handleWayTags( int allowed, OSMWay way )
+    public long handleWayTags( long allowed, OSMWay way )
     {
         if ((allowed & acceptBit) == 0)
             return 0;
 
-        int encoded;
+        long encoded;
         if ((allowed & ferryBit) == 0)
         {
             String highwayValue = way.getTag("highway");
@@ -169,8 +170,7 @@ public class CarFlagEncoder extends AbstractFlagEncoder
 
         } else
         {
-            // TODO read duration and calculate speed 00:30 for ferry
-            encoded = speedEncoder.setValue(0, 10);
+            encoded = handleFerry(way, SPEED.get("living_street"), SPEED.get("service"), SPEED.get("residential"));
             encoded |= directionBitMask;
         }
 
@@ -178,7 +178,7 @@ public class CarFlagEncoder extends AbstractFlagEncoder
     }
 
     @Override
-    public int analyzeNodeTags( OSMNode node )
+    public long analyzeNodeTags( OSMNode node )
     {
 
         // absolute barriers always block
@@ -241,10 +241,11 @@ public class CarFlagEncoder extends AbstractFlagEncoder
     @Override
     public String toString()
     {
-        return "CAR";
+        return "car";
     }
     private static final Set<String> BAD_SURFACE = new HashSet<String>()
     {
+
         
         {
             add("cobblestone");
@@ -264,6 +265,7 @@ public class CarFlagEncoder extends AbstractFlagEncoder
      */
     private static final Map<String, Integer> SPEED = new HashMap<String, Integer>()
     {
+
         
         {
             // autobahn

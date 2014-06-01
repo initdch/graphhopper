@@ -29,10 +29,11 @@ import static org.junit.Assert.*;
  */
 public class GraphHopperAPITest
 {
+    final EncodingManager encodingManager = new EncodingManager("CAR");
+
     @Test
     public void testLoad()
     {
-        final EncodingManager encodingManager = new EncodingManager("CAR");
         GraphStorage graph = new GraphBuilder(encodingManager).create();
         graph.setNode(0, 42, 10);
         graph.setNode(1, 42.1, 10.1);
@@ -46,7 +47,7 @@ public class GraphHopperAPITest
         graph.edge(0, 4, 40, true);
         graph.edge(4, 3, 40, true);
 
-        GraphHopperAPI instance = new GraphHopper(graph).setEncodingManager(encodingManager);
+        GraphHopperAPI instance = new GraphHopper().setEncodingManager(encodingManager).disableCHShortcuts().loadGraph(graph);
         GHResponse ph = instance.route(new GHRequest(42, 10.4, 42, 10));
         assertTrue(ph.isFound());
         assertEquals(80, ph.getDistance(), 1e-6);
@@ -55,5 +56,31 @@ public class GraphHopperAPITest
         assertEquals(41.9, ph.getPoints().getLatitude(1), 1e-5);
         assertEquals(10.2, ph.getPoints().getLongitude(1), 1e-5);
         assertEquals(3, ph.getPoints().getSize());
+    }
+
+    @Test
+    public void testNoLoad()
+    {
+
+        GraphHopperAPI instance = new GraphHopper().setEncodingManager(encodingManager).disableCHShortcuts();
+        try
+        {
+            instance.route(new GHRequest(42, 10.4, 42, 10));
+            assertTrue(false);
+        } catch (Exception ex)
+        {
+            assertTrue(ex.getMessage(), ex.getMessage().startsWith("Call load or importOrLoad before routing"));
+        }
+
+        instance = new GraphHopper().setEncodingManager(encodingManager);
+        try
+        {
+            instance.route(new GHRequest(42, 10.4, 42, 10));
+            assertTrue(false);
+        } catch (Exception ex)
+        {
+            assertTrue(ex.getMessage(), ex.getMessage().startsWith("Call load or importOrLoad before routing"));
+        }
+
     }
 }

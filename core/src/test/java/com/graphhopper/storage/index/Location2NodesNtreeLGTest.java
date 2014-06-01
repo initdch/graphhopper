@@ -19,24 +19,28 @@
 package com.graphhopper.storage.index;
 
 import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.LevelGraph;
 import com.graphhopper.storage.LevelGraphStorage;
 import com.graphhopper.storage.RAMDirectory;
 import com.graphhopper.util.EdgeIterator;
-import com.graphhopper.util.EdgeSkipIterator;
+import com.graphhopper.util.EdgeSkipExplorer;
 import com.graphhopper.util.Helper;
 import gnu.trove.list.TIntList;
 import gnu.trove.set.TIntSet;
 import gnu.trove.set.hash.TIntHashSet;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /**
  * @author Peter Karich
  */
-public class Location2NodesNtreeLGTest extends Location2NodesNtreeTest
+public class Location2NodesNtreeLGTest extends LocationIndexTreeTest
 {
     EncodingManager encodingManager = new EncodingManager("CAR");
 
@@ -77,25 +81,43 @@ public class Location2NodesNtreeLGTest extends Location2NodesNtreeTest
         EdgeIterator iter4 = g.edge(3, 4, 14, true);
 
         // create shortcuts
-        EdgeSkipIterator iter5 = g.edge(0, 2, 20, true);
+        FlagEncoder car = encodingManager.getEncoder("CAR");
+        long flags = car.setProperties(60, true, true);
+        EdgeSkipExplorer iter5 = g.shortcut(0, 2);
+        iter5.setDistance(20).setFlags(flags);
         iter5.setSkippedEdges(iter1.getEdge(), iter2.getEdge());
-        EdgeSkipIterator iter6 = g.edge(2, 4, 28, true);
+        EdgeSkipExplorer iter6 = g.shortcut(2, 4);
+        iter6.setDistance(28).setFlags(flags);
         iter6.setSkippedEdges(iter3.getEdge(), iter4.getEdge());
-        g.edge(0, 4, 40, true).setSkippedEdges(iter5.getEdge(), iter6.getEdge());
+        EdgeSkipExplorer tmp = g.shortcut(0, 4);
+        tmp.setDistance(40).setFlags(flags);
+        tmp.setSkippedEdges(iter5.getEdge(), iter6.getEdge());
 
-        Location2IDIndex index = createIndex(g, -1);
+        LocationIndex index = createIndex(g, -1);
         assertEquals(2, index.findID(0, 0.5));
     }
 
     @Test
     public void testSortHighLevelFirst()
     {
-        LevelGraph lg = createGraph(new RAMDirectory(), encodingManager);
+        final LevelGraph lg = createGraph(new RAMDirectory(), encodingManager);
         lg.setLevel(1, 10);
         lg.setLevel(2, 30);
         lg.setLevel(3, 20);
         TIntList tlist = Helper.createTList(1, 2, 3);
-        new Location2NodesNtreeLG(lg, new RAMDirectory()).sortNodes(tlist);
+
+        // nodes with high level should come first to be covered by lower level nodes
+        ArrayList<Integer> list = Helper.tIntListToArrayList(tlist);
+        Collections.sort(list, new Comparator<Integer>()
+        {
+            @Override
+            public int compare( Integer o1, Integer o2 )
+            {
+                return lg.getLevel(o2) - lg.getLevel(o1);
+            }
+        });
+        tlist.clear();
+        tlist.addAll(list);
         assertEquals(Helper.createTList(2, 3, 1), tlist);
     }
 
@@ -119,12 +141,12 @@ public class Location2NodesNtreeLGTest extends Location2NodesNtreeTest
         lg.setLevel(0, 11);
         lg.setLevel(1, 10);
         // disconnect higher 0 from lower 1
-        lg.disconnect(iter1, EdgeIterator.NO_EDGE, false);
+        lg.disconnect(lg.createEdgeExplorer(), iter1);
 
         lg.setLevel(2, 12);
         lg.setLevel(3, 13);
         // disconnect higher 3 from lower 2
-        lg.disconnect(iter1, EdgeIterator.NO_EDGE, false);
+        lg.disconnect(lg.createEdgeExplorer(), iter1);
 
         Location2NodesNtreeLG index = new Location2NodesNtreeLG(lg, new RAMDirectory());
         index.setResolution(100000);

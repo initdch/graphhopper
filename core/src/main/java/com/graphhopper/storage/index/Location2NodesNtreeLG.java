@@ -23,14 +23,7 @@ import com.graphhopper.routing.util.AllEdgesSkipIterator;
 import com.graphhopper.routing.util.EdgeFilter;
 import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.LevelGraph;
-import com.graphhopper.util.EdgeIterator;
-import com.graphhopper.util.EdgeSkipIterator;
-import com.graphhopper.util.Helper;
-import com.graphhopper.util.PointList;
-import gnu.trove.list.TIntList;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
+import com.graphhopper.util.*;
 
 /**
  * The LevelGraph has some edges disconnected (to be more efficient), but this happens before the
@@ -44,14 +37,14 @@ import java.util.Comparator;
  * <p/>
  * @author Peter Karich
  */
-public class Location2NodesNtreeLG extends Location2NodesNtree
+public class Location2NodesNtreeLG extends LocationIndexTree
 {
     private final static EdgeFilter NO_SHORTCUT = new EdgeFilter()
     {
         @Override
-        public boolean accept( EdgeIterator iter )
+        public boolean accept( EdgeIteratorState edgeIterState )
         {
-            return !((EdgeSkipIterator) iter).isShortcut();
+            return !((EdgeSkipIterator) edgeIterState).isShortcut();
         }
     };
     private LevelGraph lg;
@@ -60,23 +53,6 @@ public class Location2NodesNtreeLG extends Location2NodesNtree
     {
         super(g, dir);
         lg = g;
-    }
-
-    @Override
-    protected void sortNodes( TIntList nodes )
-    {
-        // nodes with high level should come first to be covered by lower level nodes
-        ArrayList<Integer> list = Helper.tIntListToArrayList(nodes);
-        Collections.sort(list, new Comparator<Integer>()
-        {
-            @Override
-            public int compare( Integer o1, Integer o2 )
-            {
-                return lg.getLevel(o2) - lg.getLevel(o1);
-            }
-        });
-        nodes.clear();
-        nodes.addAll(list);
     }
 
     @Override
@@ -97,6 +73,13 @@ public class Location2NodesNtreeLG extends Location2NodesNtree
         final AllEdgesSkipIterator tmpIter = lg.getAllEdges();
         return new AllEdgesIterator()
         {
+
+            @Override
+            public EdgeIteratorState detach()
+            {
+                return tmpIter.detach();
+            }
+
             @Override
             public int getMaxId()
             {
@@ -135,15 +118,15 @@ public class Location2NodesNtreeLG extends Location2NodesNtree
             }
 
             @Override
-            public PointList getWayGeometry()
+            public PointList fetchWayGeometry( int type )
             {
-                return tmpIter.getWayGeometry();
+                return tmpIter.fetchWayGeometry(type);
             }
 
             @Override
-            public void setWayGeometry( PointList list )
+            public EdgeIteratorState setWayGeometry( PointList list )
             {
-                tmpIter.setWayGeometry(list);
+                return tmpIter.setWayGeometry(list);
             }
 
             @Override
@@ -153,44 +136,40 @@ public class Location2NodesNtreeLG extends Location2NodesNtree
             }
 
             @Override
-            public void setDistance( double dist )
+            public EdgeIteratorState setDistance( double dist )
             {
-                tmpIter.setDistance(dist);
+                return tmpIter.setDistance(dist);
             }
 
             @Override
-            public int getFlags()
+            public long getFlags()
             {
                 return tmpIter.getFlags();
             }
 
             @Override
-            public void setFlags( int flags )
+            public EdgeIteratorState setFlags( long flags )
             {
-                tmpIter.setFlags(flags);
+                return tmpIter.setFlags(flags);
             }
 
             @Override
-            public boolean isEmpty()
+            public String getName()
             {
-                return tmpIter.isEmpty();
-            }
-            
-            @Override
-            public String getName() {
                 return tmpIter.getName();
             }
 
             @Override
-            public void setName(String name) {
-                tmpIter.setName(name);
+            public EdgeIteratorState setName( String name )
+            {
+                return tmpIter.setName(name);
             }
         };
     }
 
     @Override
-    protected EdgeIterator getEdges( int node )
+    protected EdgeFilter getEdgeFilter()
     {
-        return lg.getEdges(node, NO_SHORTCUT);
+        return NO_SHORTCUT;
     }
 }

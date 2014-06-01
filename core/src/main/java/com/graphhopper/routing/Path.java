@@ -20,14 +20,9 @@ package com.graphhopper.routing;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.storage.EdgeEntry;
 import com.graphhopper.storage.Graph;
-import com.graphhopper.util.EdgeIterator;
-import com.graphhopper.util.PointList;
-import com.graphhopper.util.StopWatch;
-import com.graphhopper.util.InstructionList;
+import com.graphhopper.util.*;
 import gnu.trove.list.TIntList;
 import gnu.trove.list.array.TIntArrayList;
-import gnu.trove.set.TIntSet;
-import gnu.trove.set.hash.TIntHashSet;
 
 /**
  * Stores the nodes for the found path of an algorithm. It additionally needs the edgeIds to make
@@ -40,14 +35,14 @@ import gnu.trove.set.hash.TIntHashSet;
 public class Path
 {
     protected Graph graph;
-    protected FlagEncoder encoder;
+    private FlagEncoder encoder;
     protected double distance;
     // we go upwards (via EdgeEntry.parent) from the goal node to the origin node
     protected boolean reverseOrder = true;
     protected long time;
     private boolean found;
     protected EdgeEntry edgeEntry;
-    StopWatch sw = new StopWatch("extract");
+    final StopWatch extractSW = new StopWatch("extract");
     private int fromNode = -1;
     protected int endNode = -1;
     private TIntList edgeIds;
@@ -106,9 +101,8 @@ public class Path
     private int getFromNode()
     {
         if (!EdgeIterator.Edge.isValid(fromNode))
-        {
             throw new IllegalStateException("Call extract() before retrieving fromNode");
-        }
+
         return fromNode;
     }
 
@@ -125,7 +119,10 @@ public class Path
 
     void reverseOrder()
     {
-        reverseOrder = !reverseOrder;
+        if (!reverseOrder)
+            throw new IllegalStateException("Switching order multiple times is not supported");
+
+        reverseOrder = false;
         edgeIds.reverse();
     }
 
@@ -163,49 +160,58 @@ public class Path
      */
     public Path extract()
     {
-        sw.start();
+        extractSW.start();
         EdgeEntry goalEdge = edgeEntry;
         setEndNode(goalEdge.endNode);
         while (EdgeIterator.Edge.isValid(goalEdge.edge))
         {
-            processDistance(goalEdge.edge, goalEdge.endNode);
+            processEdge(goalEdge.edge, goalEdge.endNode);
             goalEdge = goalEdge.parent;
         }
 
         setFromNode(goalEdge.endNode);
         reverseOrder();
-        sw.stop();
+        extractSW.stop();
         return setFound(true);
+    }
+
+    /**
+     * @return the time it took to extract the path in nano (!) seconds
+     */
+    public long getExtractTime()
+    {
+        return extractSW.getNanos();
     }
 
     public String getDebugInfo()
     {
-        return sw.toString();
+        return extractSW.toString();
     }
 
     /**
      * Calls calcDistance and adds the edgeId.
      */
-    protected void processDistance( int edgeId, int endNode )
+    protected void processEdge( int edgeId, int endNode )
     {
-        EdgeIterator iter = graph.getEdgeProps(edgeId, endNode);
+        EdgeIteratorState iter = graph.getEdgeProps(edgeId, endNode);
         distance += calcDistance(iter);
         time += calcTime(iter.getDistance(), iter.getFlags());
         addEdge(edgeId);
     }
 
     /**
-     * This method returns the distance in kilometer for the specified edge.
+     * This method returns the distance in meter for the specified edge.
      */
-    protected double calcDistance( EdgeIterator iter )
+    protected double calcDistance( EdgeIteratorState iter )
     {
         return iter.getDistance();
     }
 
     /**
-     * Calculates the time in minutes for the specified distance and speed (via flags)
+     * Calculates the time in seconds for the specified distance in meter and speed (via
+     * setProperties)
      */
-    protected long calcTime( double distance, int flags )
+    protected long calcTime( double distance, long flags )
     {
         return (long) (distance * 3.6 / encoder.getSpeed(flags));
     }
@@ -213,29 +219,29 @@ public class Path
     /**
      * Used in combination with forEveryEdge.
      */
-    public static interface EdgeVisitor
+    private static interface EdgeVisitor
     {
-        void next( EdgeIterator iter, int index );
+        void next( EdgeIteratorState edgeBase, int index );
     }
 
     /**
      * Iterates over all edges in this path and calls the visitor for it.
      */
-    public void forEveryEdge( EdgeVisitor visitor )
+    private void forEveryEdge( EdgeVisitor visitor )
     {
         int tmpNode = getFromNode();
         int len = edgeIds.size();
         for (int i = 0; i < len; i++)
         {
-            EdgeIterator iter = graph.getEdgeProps(edgeIds.get(i), tmpNode);
-            if (iter.isEmpty())
+            EdgeIteratorState edgeBase = graph.getEdgeProps(edgeIds.get(i), tmpNode);
+            if (edgeBase == null)
             {
                 throw new IllegalStateException("Edge " + edgeIds.get(i)
                         + " was empty when requested with node " + tmpNode
                         + ", array index:" + i + ", edges:" + edgeIds.size());
             }
-            tmpNode = iter.getBaseNode();
-            visitor.next(iter, i);
+            tmpNode = edgeBase.getBaseNode();
+            visitor.next(edgeBase, i);
         }
     }
 
@@ -246,18 +252,16 @@ public class Path
     {
         final TIntArrayList nodes = new TIntArrayList(edgeIds.size() + 1);
         if (edgeIds.isEmpty())
-        {
             return nodes;
-        }
 
         int tmpNode = getFromNode();
         nodes.add(tmpNode);
         forEveryEdge(new EdgeVisitor()
         {
             @Override
-            public void next( EdgeIterator iter, int i )
+            public void next( EdgeIteratorState eb, int i )
             {
-                nodes.add(iter.getBaseNode());
+                nodes.add(eb.getBaseNode());
             }
         });
         return nodes;
@@ -269,29 +273,25 @@ public class Path
     public PointList calcPoints()
     {
         if (cachedPoints != null)
-        {
             return cachedPoints;
-        }
+
         cachedPoints = new PointList(edgeIds.size() + 1);
         if (edgeIds.isEmpty())
-        {
             return cachedPoints;
-        }
+
         int tmpNode = getFromNode();
         cachedPoints.add(graph.getLatitude(tmpNode), graph.getLongitude(tmpNode));
         forEveryEdge(new EdgeVisitor()
         {
             @Override
-            public void next( EdgeIterator iter, int i )
+            public void next( EdgeIteratorState eb, int i )
             {
-                PointList pl = iter.getWayGeometry();
+                PointList pl = eb.fetchWayGeometry(1);
                 pl.reverse();
                 for (int j = 0; j < pl.getSize(); j++)
                 {
                     cachedPoints.add(pl.getLatitude(j), pl.getLongitude(j));
                 }
-                int baseNode = iter.getBaseNode();
-                cachedPoints.add(graph.getLatitude(baseNode), graph.getLongitude(baseNode));
             }
         });
         return cachedPoints;
@@ -303,14 +303,11 @@ public class Path
     public InstructionList calcInstructions()
     {
         if (cachedWays != null)
-        {
             return cachedWays;
-        }
+
         cachedWays = new InstructionList(edgeIds.size() / 4);
         if (edgeIds.isEmpty())
-        {
             return cachedWays;
-        }
 
         final int tmpNode = getFromNode();
         forEveryEdge(new EdgeVisitor()
@@ -342,22 +339,22 @@ public class Path
             double prevDist;
 
             @Override
-            public void next( EdgeIterator iter, int index )
-            {                
+            public void next( EdgeIteratorState edgeBase, int index )
+            {
                 // Hmmh, a bit ugly: 'iter' links to the previous node of the path!
                 // Ie. baseNode is the current node and adjNode is the previous.
-                int baseNode = iter.getBaseNode();
+                int baseNode = edgeBase.getBaseNode();
                 double baseLat = graph.getLatitude(baseNode);
                 double baseLon = graph.getLongitude(baseNode);
                 double latitude, longitude;
-                PointList wayGeo = iter.getWayGeometry();
+                PointList wayGeo = edgeBase.fetchWayGeometry(0);
                 if (wayGeo.isEmpty())
                 {
                     latitude = baseLat;
                     longitude = baseLon;
                 } else
                 {
-                    int adjNode = iter.getAdjNode();
+                    int adjNode = edgeBase.getAdjNode();
                     prevLat = graph.getLatitude(adjNode);
                     prevLon = graph.getLongitude(adjNode);
                     latitude = wayGeo.getLatitude(wayGeo.getSize() - 1);
@@ -367,8 +364,8 @@ public class Path
                 double orientation = Math.atan2(latitude - prevLat, longitude - prevLon);
                 if (name == null)
                 {
-                    name = iter.getName();
-                    prevDist = calcDistance(iter);
+                    name = edgeBase.getName();
+                    prevDist = calcDistance(edgeBase);
                     cachedWays.add(InstructionList.CONTINUE_ON_STREET, name, prevDist);
                 } else
                 {
@@ -376,28 +373,23 @@ public class Path
                     if (prevOrientation >= 0)
                     {
                         if (orientation < -Math.PI + prevOrientation)
-                        {
                             tmpOrientation = orientation + 2 * Math.PI;
-                        } else
-                        {
+                        else
                             tmpOrientation = orientation;
-                        }
+
                     } else
                     {
                         if (orientation > +Math.PI + prevOrientation)
-                        {
                             tmpOrientation = orientation - 2 * Math.PI;
-                        } else
-                        {
+                        else
                             tmpOrientation = orientation;
-                        }
                     }
-                                                           
-                    String tmpName = iter.getName();
+
+                    String tmpName = edgeBase.getName();
                     if (!name.equals(tmpName))
                     {
                         cachedWays.updateLastDistance(prevDist);
-                        prevDist = calcDistance(iter);
+                        prevDist = calcDistance(edgeBase);
                         name = tmpName;
                         double delta = Math.abs(tmpOrientation - prevOrientation);
                         if (delta < 0.2)
@@ -409,76 +401,44 @@ public class Path
                         {
                             // 0.8 ~= 40°
                             if (tmpOrientation > prevOrientation)
-                            {
                                 cachedWays.add(InstructionList.TURN_SLIGHT_LEFT, name, prevDist);
-                            } else
-                            {
+                            else
                                 cachedWays.add(InstructionList.TURN_SLIGHT_RIGHT, name, prevDist);
-                            }
+
                         } else if (delta < 1.8)
                         {
                             // 1.8 ~= 103°
                             if (tmpOrientation > prevOrientation)
-                            {
                                 cachedWays.add(InstructionList.TURN_LEFT, name, prevDist);
-                            } else
-                            {
+                            else
                                 cachedWays.add(InstructionList.TURN_RIGHT, name, prevDist);
-                            }
+
                         } else
                         {
                             if (tmpOrientation > prevOrientation)
-                            {
                                 cachedWays.add(InstructionList.TURN_SHARP_LEFT, name, prevDist);
-                            } else
-                            {
+                            else
                                 cachedWays.add(InstructionList.TURN_SHARP_RIGHT, name, prevDist);
-                            }
+
                         }
                     } else
-                        prevDist += calcDistance(iter);
+                        prevDist += calcDistance(edgeBase);
                 }
 
                 prevLat = baseLat;
                 prevLon = baseLon;
                 if (wayGeo.isEmpty())
-                {
                     prevOrientation = orientation;
-                } else
-                {
+                else
                     prevOrientation = Math.atan2(baseLat - wayGeo.getLatitude(0), baseLon - wayGeo.getLongitude(0));
-                }
-                
+
                 boolean lastEdgeIter = index == edgeIds.size() - 1;
-                if(lastEdgeIter)
+                if (lastEdgeIter)
                     cachedWays.updateLastDistance(prevDist);
             }
         });
 
         return cachedWays;
-    }
-
-    public TIntSet calculateIdenticalNodes( Path p2 )
-    {
-        TIntHashSet thisSet = new TIntHashSet();
-        TIntHashSet retSet = new TIntHashSet();
-        TIntList nodes = calcNodes();
-        int max = nodes.size();
-        for (int i = 0; i < max; i++)
-        {
-            thisSet.add(nodes.get(i));
-        }
-
-        nodes = p2.calcNodes();
-        max = nodes.size();
-        for (int i = 0; i < max; i++)
-        {
-            if (thisSet.contains(nodes.get(i)))
-            {
-                retSet.add(nodes.get(i));
-            }
-        }
-        return retSet;
     }
 
     @Override
@@ -493,9 +453,7 @@ public class Path
         for (int i = 0; i < edgeIds.size(); i++)
         {
             if (i > 0)
-            {
                 str += "->";
-            }
 
             str += edgeIds.get(i);
         }

@@ -17,8 +17,6 @@
  */
 package com.graphhopper;
 
-import com.graphhopper.routing.util.ShortestCalc;
-import com.graphhopper.routing.util.WeightCalculation;
 import com.graphhopper.util.shapes.GHPlace;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,12 +28,12 @@ import java.util.Map;
  */
 public class GHRequest
 {
-    private String algo = "astar";
+    private String algo = "dijkstrabi";
     private GHPlace from;
     private GHPlace to;
     private Map<String, Object> hints = new HashMap<String, Object>(5);
-    private String encoderName = "CAR";
-    private WeightCalculation weightCalc = new ShortestCalc();    
+    private String vehicle = "CAR";
+    private String weighting = "shortest";
 
     /**
      * Calculate the path from specified startPoint (fromLat, fromLon) to endPoint (toLat, toLon).
@@ -57,13 +55,10 @@ public class GHRequest
     public void check()
     {
         if (from == null)
-        {
             throw new IllegalStateException("the 'from' point needs to be initialized but was null");
-        }
+
         if (to == null)
-        {
             throw new IllegalStateException("the 'to' point needs to be initialized but was null");
-        }
     }
 
     public GHPlace getFrom()
@@ -95,9 +90,8 @@ public class GHRequest
     {
         Object old = hints.put(key, value);
         if (old != null)
-        {
             throw new RuntimeException("Key is already associated with " + old + ", your value:" + value);
-        }
+
         return this;
     }
 
@@ -106,9 +100,8 @@ public class GHRequest
     {
         Object obj = hints.get(key);
         if (obj == null)
-        {
             return defaultValue;
-        }
+
         return (T) obj;
     }
 
@@ -118,25 +111,28 @@ public class GHRequest
         return from + " " + to + " (" + algo + ")";
     }
 
-    public GHRequest setType( WeightCalculation weightCalc )
+    /**
+     * By default it supports fastest and shortest
+     */
+    public GHRequest setWeighting( String w )
     {
-        this.weightCalc = weightCalc;
+        this.weighting = w;
         return this;
     }
 
-    public WeightCalculation getType()
+    public String getWeighting()
     {
-        return weightCalc;
+        return weighting;
     }
 
-    public GHRequest setVehicle( String encoder )
+    public GHRequest setVehicle( String vehicle )
     {
-        this.encoderName = encoder;
+        this.vehicle = vehicle;
         return this;
     }
 
     public String getVehicle()
     {
-        return encoderName;
+        return vehicle;
     }
 }

@@ -20,7 +20,9 @@ package com.graphhopper.routing;
 
 import com.graphhopper.coll.IntDoubleBinHeap;
 import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.util.Weighting;
 import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.index.QueryResult;
 import com.graphhopper.util.EdgeIterator;
 import gnu.trove.list.TIntList;
 import gnu.trove.list.array.TIntArrayList;
@@ -35,22 +37,29 @@ import java.util.Arrays;
 public class DijkstraOneToMany extends AbstractRoutingAlgorithm
 {
     protected double[] weights;
-    private TIntList changedNodes;
+    private final TIntList changedNodes;
     private int[] parents;
     private int[] edgeIds;
     private IntDoubleBinHeap heap;
     private int visitedNodes;
     private boolean doClear = true;
     private double limit = Double.MAX_VALUE;
+    private int endNode;
+    private int currNode, fromNode, to;
 
-    public DijkstraOneToMany( Graph graph, FlagEncoder encoder )
+    public DijkstraOneToMany( Graph graph, FlagEncoder encoder, Weighting weighting )
     {
-        super(graph, encoder);
+        super(graph, encoder, weighting);
+
         parents = new int[graph.getNodes()];
         Arrays.fill(parents, -1);
 
+        edgeIds = new int[graph.getNodes()];
+        Arrays.fill(edgeIds, EdgeIterator.NO_EDGE);
+
         weights = new double[graph.getNodes()];
         Arrays.fill(weights, Double.MAX_VALUE);
+
         heap = new IntDoubleBinHeap();
         changedNodes = new TIntArrayList();
     }
@@ -62,20 +71,26 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm
     }
 
     @Override
+    public Path calcPath( QueryResult fromRes, QueryResult toRes )
+    {
+        throw new IllegalStateException("not supported yet");
+    }
+
+    @Override
     public Path calcPath( int from, int to )
     {
-        if (edgeIds == null)
-        {
-            edgeIds = new int[graph.getNodes()];
-            Arrays.fill(edgeIds, EdgeIterator.NO_EDGE);
-        }
-        int endNode = findEndNode(from, to);
+        fromNode = from;
+        endNode = findEndNode(from, to);
+        return extractPath();
+    }
+
+    @Override
+    public Path extractPath()
+    {
         PathNative p = new PathNative(graph, flagEncoder, parents, edgeIds);
-        p.setFromNode(from);
+        p.setFromNode(fromNode);
         if (endNode < 0)
-        {
             return p;
-        }
         return p.setEndNode(endNode).extract();
     }
 
@@ -94,8 +109,8 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm
     {
         if (weights.length < 2)
             return -1;
-        
-        int currNode = from;
+
+        this.to = to;
         if (doClear)
         {
             doClear = false;
@@ -105,13 +120,13 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm
                 int n = changedNodes.get(i);
                 weights[n] = Double.MAX_VALUE;
                 parents[n] = -1;
-                if (edgeIds != null)
-                    edgeIds[n] = EdgeIterator.NO_EDGE;
+                edgeIds[n] = EdgeIterator.NO_EDGE;
             }
 
             heap.clear();
             changedNodes.clear();
 
+            currNode = from;
             weights[currNode] = 0;
             changedNodes.add(currNode);
         } else
@@ -120,65 +135,66 @@ public class DijkstraOneToMany extends AbstractRoutingAlgorithm
             int parentNode = parents[to];
             if (parentNode >= 0 || heap.isEmpty())
                 return to;
-            
+
             currNode = heap.poll_element();
         }
 
         visitedNodes = 0;
-        if (finished(currNode, to))
+        if (finished())
             return currNode;
-        
+
         while (true)
         {
             visitedNodes++;
-            EdgeIterator iter = graph.getEdges(currNode, outEdgeFilter);
+            EdgeIterator iter = outEdgeExplorer.setBaseNode(currNode);
             while (iter.next())
             {
                 if (!accept(iter))
-                {
                     continue;
-                }
                 int adjNode = iter.getAdjNode();
-                double tmpWeight = weightCalc.getWeight(iter.getDistance(), iter.getFlags()) + weights[currNode];
+                // minor speed up
+                if (edgeIds[adjNode] == iter.getEdge())
+                    continue;
+
+                double tmpWeight = weighting.calcWeight(iter) + weights[currNode];
                 if (weights[adjNode] == Double.MAX_VALUE)
                 {
                     parents[adjNode] = currNode;
                     weights[adjNode] = tmpWeight;
                     heap.insert_(tmpWeight, adjNode);
                     changedNodes.add(adjNode);
-                    if (edgeIds != null)
-                    {
-                        edgeIds[adjNode] = iter.getEdge();
-                    }
+                    edgeIds[adjNode] = iter.getEdge();
+
                 } else if (weights[adjNode] > tmpWeight)
                 {
                     parents[adjNode] = currNode;
                     weights[adjNode] = tmpWeight;
                     heap.update_(tmpWeight, adjNode);
                     changedNodes.add(adjNode);
-                    if (edgeIds != null)
-                        edgeIds[adjNode] = iter.getEdge();
+                    edgeIds[adjNode] = iter.getEdge();
                 }
             }
 
             if (heap.isEmpty())
                 return -1;
-            
-            // calling just peek() is important for a cached next query
+
+            // calling just peek and not poll is important if the next query is cached
             currNode = heap.peek_element();
-            if (finished(currNode, to))
+            if (finished())
                 return currNode;
-            
+
             heap.poll_element();
         }
     }
 
-    public boolean finished( int currNode, int to )
+    @Override
+    public boolean finished()
     {
         return weights[currNode] >= limit || currNode == to;
     }
-    
-    public void close() {
+
+    public void close()
+    {
         weights = null;
         parents = null;
         edgeIds = null;
